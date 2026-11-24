@@ -1,0 +1,690 @@
+#!/usr/bin/env python3
+"""
+hubtraffic — Sistema de auditoría y métricas de tráfico usuario -> VPN para Hub VPN.
+Monitorea conntrack de Netfilter, asocia IP origen a usuarios, identifica la VPN de destino,
+registra sesiones con hora de inicio, fin, duración y bytes transferidos en SQLite (/var/log/vpnhub/traffic.db).
+"""
+import glob
+import ipaddress
+import json
+import os
+import re
+import signal
+import socket
+import sqlite3
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+ETC = Path("/etc/vpnhub")
+RUN = Path("/run/vpnhub")
+CLIENTES = ETC / "clientes"
+RW_PEERS_FILE = ETC / "rw_peers.json"
+SESSIONS_FILE = RUN / "sessions.json"
+LAN_DEVICES_FILE = ETC / "lan_devices.json"
+USERS_FILE = ETC / "users.json"
+DB_PATH = Path("/var/log/vpnhub/traffic.db")
+DB_LOCK = threading.Lock()
+
+PORTS_MAP = {
+    80: "HTTP", 443: "HTTPS", 8080: "HTTP-8080", 8443: "HTTPS-8443",
+    3389: "RDP", 22: "SSH", 21: "FTP", 23: "Telnet", 25: "SMTP",
+    53: "DNS", 110: "POP3", 143: "IMAP", 993: "IMAPS", 995: "POP3S",
+    445: "SMB", 139: "NetBIOS", 1433: "MS-SQL", 1521: "Oracle",
+    3306: "MySQL", 5432: "PostgreSQL", 27017: "MongoDB", 6379: "Redis",
+    5900: "VNC", 5901: "VNC-1", 5060: "SIP", 161: "SNMP",
+    8000: "Web-8000", 8006: "PVE", 8088: "Web-8088", 8888: "Web-8888",
+    9000: "Portainer", 9200: "Elastic", 5601: "Kibana"
+}
+
+VPN_CLIENT_CACHE = {}
+VPN_CACHE_TIME = 0
+
+def get_local_ips():
+    ips = {"127.0.0.1"}
+    try:
+        out = subprocess.check_output(["ip", "-4", "-j", "addr"], text=True)
+        for dev in json.loads(out or "[]"):
+            for a in dev.get("addr_info", []):
+                ips.add(a.get("local"))
+    except Exception:
+        pass
+    return ips
+
+LOCAL_IPS = get_local_ips()
+
+def get_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH), timeout=15)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    with DB_LOCK:
+        with get_db() as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_key TEXT UNIQUE,
+                    user TEXT NOT NULL,
+                    src_ip TEXT NOT NULL,
+                    client_vpn TEXT NOT NULL,
+                    dst_ip TEXT NOT NULL,
+                    dst_port INTEGER NOT NULL,
+                    proto TEXT NOT NULL,
+                    service TEXT NOT NULL,
+                    start_time INTEGER NOT NULL,
+                    end_time INTEGER,
+                    duration INTEGER DEFAULT 0,
+                    bytes_sent INTEGER DEFAULT 0,
+                    bytes_recv INTEGER DEFAULT 0,
+                    bytes_total INTEGER DEFAULT 0,
+                    packets INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'active'
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_time ON sessions(user, start_time);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_vpn_time ON sessions(client_vpn, start_time);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_start_time ON sessions(start_time);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);")
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS lan_devices (
+                    ip TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+            """)
+            conn.commit()
+
+# ================= Mapeo de Usuarios y VPNs =================
+
+def load_vpn_clients():
+    global VPN_CLIENT_CACHE, VPN_CACHE_TIME
+    now = time.time()
+    if VPN_CLIENT_CACHE and now - VPN_CACHE_TIME < 30:
+        return VPN_CLIENT_CACHE
+
+    res = {"by_id": {}, "by_subnet": {}, "by_name": {}}
+    if not CLIENTES.exists():
+        return res
+
+    for f in CLIENTES.glob("*.conf"):
+        name = f.stem
+        cid = None
+        subnets = []
+        try:
+            for line in f.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("ID="):
+                    cid = int(line.split("=", 1)[1].strip().strip("'\""))
+                elif line.startswith("MAP="):
+                    val = line.split("=", 1)[1].strip().strip("'\"")
+                    for pair in val.split():
+                        pair = pair.lstrip("!")
+                        if "=" in pair:
+                            _, real = pair.split("=", 1)
+                            subnets.append(real.strip())
+        except Exception:
+            continue
+
+        if cid is not None:
+            res["by_id"][cid] = name
+            res["by_name"][name] = {"id": cid, "subnets": subnets}
+            for sub in subnets:
+                try:
+                    res["by_subnet"][ipaddress.ip_network(sub, strict=False)] = name
+                except Exception:
+                    pass
+
+    VPN_CLIENT_CACHE = res
+    VPN_CACHE_TIME = now
+    return res
+
+def resolve_vpn(orig_dst, reply_dst):
+    """
+    Identifica la VPN destino a partir de:
+    1. Red virtual: 10.(200+ID).X.Y -> ID
+    2. IP de tránsito en el reply tuple: 100.64.ID.1 -> ID
+    3. Red real mapeada (proto 77)
+    """
+    clients = load_vpn_clients()
+
+    # 1. Chequeo por IP de tránsito 100.64.ID.1
+    if reply_dst and reply_dst.startswith("100.64."):
+        parts = reply_dst.split(".")
+        if len(parts) == 4:
+            try:
+                cid = int(parts[2])
+                if cid in clients["by_id"]:
+                    return clients["by_id"][cid]
+            except Exception:
+                pass
+
+    # 2. Chequeo por IP virtual 10.(200+ID).X.Y
+    if orig_dst and orig_dst.startswith("10."):
+        parts = orig_dst.split(".")
+        if len(parts) == 4:
+            try:
+                second = int(parts[1])
+                if 201 <= second <= 255:
+                    cid = second - 200
+                    if cid in clients["by_id"]:
+                        return clients["by_id"][cid]
+            except Exception:
+                pass
+
+    # 3. Chequeo por subred real de cliente
+    if orig_dst:
+        try:
+            ip_obj = ipaddress.ip_address(orig_dst)
+            for net, name in clients["by_subnet"].items():
+                if ip_obj in net:
+                    return name
+        except Exception:
+            pass
+
+    return None
+
+def resolve_user(src_ip):
+    """
+    Asocia la IP de origen a un usuario conocido:
+    1. WireGuard Road Warrior (10.99.0.X) -> usuario en rw_peers.json
+    2. Sesión activa en el panel web desde esa IP -> uname
+    3. Nombre de dispositivo LAN en lan_devices.json o tabla de la DB
+    4. Fallback a la IP directa
+    """
+    if not src_ip:
+        return "desconocido"
+
+    # 1. WireGuard Road Warrior
+    if src_ip.startswith("10.99.0."):
+        if RW_PEERS_FILE.exists():
+            try:
+                peers = json.loads(RW_PEERS_FILE.read_text())
+                for uname, pdata in peers.items():
+                    if pdata.get("ip") == src_ip:
+                        return uname
+            except Exception:
+                pass
+
+    # 2. Sesión web en el panel (para IPs de LAN como 192.168.1.X)
+    if SESSIONS_FILE.exists():
+        try:
+            sessions = json.loads(SESSIONS_FILE.read_text())
+            for tok, sdata in sessions.items():
+                if sdata.get("ip") == src_ip and sdata.get("uname"):
+                    return sdata["uname"]
+        except Exception:
+            pass
+
+    # 3. Dispositivos LAN registrados manualmente
+    try:
+        with DB_LOCK:
+            with get_db() as conn:
+                r = conn.execute("SELECT name FROM lan_devices WHERE ip = ?", (src_ip,)).fetchone()
+                if r and r["name"]:
+                    return r["name"]
+    except Exception:
+        pass
+
+    if LAN_DEVICES_FILE.exists():
+        try:
+            devs = json.loads(LAN_DEVICES_FILE.read_text())
+            if src_ip in devs:
+                return devs[src_ip]
+        except Exception:
+            pass
+
+    return src_ip
+
+def resolve_service(port, proto):
+    proto_u = (proto or "tcp").upper()
+    if proto_u == "ICMP":
+        return "Ping (ICMP)"
+    svc = PORTS_MAP.get(int(port)) if port else None
+    if svc:
+        return f"{svc} ({port})"
+    return f"{proto_u}:{port}"
+
+# ================= Colector en Vivo (Conntrack) =================
+
+CONNTRACK_RE = re.compile(
+    r"(?:\[(?P<event>NEW|DESTROY|UPDATE)\]\s+)?ipv4\s+\d+\s+(?P<proto>\w+)\s+\d+(?:\s+\d+)?(?:\s+(?P<state>\w+))?\s+"
+    r"src=(?P<orig_src>[\d.]+)\s+dst=(?P<orig_dst>[\d.]+)\s+sport=(?P<orig_sport>\d+)\s+dport=(?P<orig_dport>\d+)"
+    r"(?:\s+packets=(?P<orig_pkts>\d+)\s+bytes=(?P<orig_bytes>\d+))?"
+    r".*?"
+    r"src=(?P<reply_src>[\d.]+)\s+dst=(?P<reply_dst>[\d.]+)\s+sport=(?P<reply_sport>\d+)\s+dport=(?P<reply_dport>\d+)"
+    r"(?:\s+packets=(?P<reply_pkts>\d+)\s+bytes=(?P<reply_bytes>\d+))?"
+)
+
+def run_collector():
+    init_db()
+    print("Iniciando colector de tráfico VPN Hub (conntrack-events)...", flush=True)
+
+    # Asegurar sysctls de contabilidad
+    subprocess.run(["sysctl", "-w", "net.netfilter.nf_conntrack_acct=1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["sysctl", "-w", "net.netfilter.nf_conntrack_timestamp=1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Iniciar hilo de sincronización y limpieza periódica
+    t_sweep = threading.Thread(target=periodic_sweep, daemon=True)
+    t_sweep.start()
+
+    cmd = ["conntrack", "-E", "-e", "NEW,DESTROY", "-o", "extended,ktimestamp"]
+    while True:
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                process_line(line)
+            proc.wait()
+        except Exception as e:
+            sys.stderr.write(f"Aviso conntrack stream: {e}\n")
+            time.sleep(2)
+
+def process_line(line):
+    m = CONNTRACK_RE.search(line)
+    if not m:
+        return
+    d = m.groupdict()
+
+    orig_src = d["orig_src"]
+    orig_dst = d["orig_dst"]
+    orig_sport = int(d["orig_sport"])
+    orig_dport = int(d["orig_dport"])
+    reply_dst = d["reply_dst"]
+    proto = d["proto"].lower()
+    event = d.get("event")
+
+    # Ignorar broadcast y multicast (mDNS 224.0.0.251, LLMNR 224.0.0.252, SSDP 239.255.255.250, etc.)
+    if orig_dst.startswith("224.") or orig_dst.startswith("239.") or orig_dst == "255.255.255.255":
+        return
+
+    # Ignorar tráfico que se origina internamente en las interfaces veth del hub (100.64.X.1)
+    if orig_src.startswith("100.64."):
+        return
+
+    # Ignorar tráfico del propio panel y servicios locales del hub
+    if (orig_dst in LOCAL_IPS or orig_dst == "127.0.0.1") and orig_dport in (8443, 80, 22, 53, 51820):
+        return
+
+    client_vpn = resolve_vpn(orig_dst, reply_dst)
+    if not client_vpn:
+        # No es tráfico destinado a una VPN
+        return
+
+    now = int(time.time())
+    user = resolve_user(orig_src)
+    service = resolve_service(orig_dport, proto)
+    session_key = f"{orig_src}:{orig_sport}->{orig_dst}:{orig_dport}:{proto}"
+
+    dt_m = re.search(r"delta-time=(\d+)", line)
+    duration = int(dt_m.group(1)) if dt_m else 0
+
+    orig_bytes = int(d.get("orig_bytes") or 0)
+    reply_bytes = int(d.get("reply_bytes") or 0)
+    bytes_total = orig_bytes + reply_bytes
+    orig_pkts = int(d.get("orig_pkts") or 0)
+    reply_pkts = int(d.get("reply_pkts") or 0)
+    packets = orig_pkts + reply_pkts
+
+    with DB_LOCK:
+        try:
+            with get_db() as conn:
+                if event == "NEW" or not event:
+                    conn.execute("""
+                        INSERT INTO sessions (
+                            session_key, user, src_ip, client_vpn, dst_ip, dst_port,
+                            proto, service, start_time, end_time, duration, bytes_sent,
+                            bytes_recv, bytes_total, packets, status
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, 'active')
+                        ON CONFLICT(session_key) DO UPDATE SET
+                            user = excluded.user,
+                            client_vpn = excluded.client_vpn,
+                            status = 'active',
+                            bytes_sent = MAX(sessions.bytes_sent, excluded.bytes_sent),
+                            bytes_recv = MAX(sessions.bytes_recv, excluded.bytes_recv),
+                            bytes_total = MAX(sessions.bytes_total, excluded.bytes_total);
+                    """, (session_key, user, orig_src, client_vpn, orig_dst, orig_dport,
+                          proto, service, now, orig_bytes, reply_bytes, bytes_total, packets))
+                elif event == "DESTROY":
+                    conn.execute("""
+                        INSERT INTO sessions (
+                            session_key, user, src_ip, client_vpn, dst_ip, dst_port,
+                            proto, service, start_time, end_time, duration, bytes_sent,
+                            bytes_recv, bytes_total, packets, status
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed')
+                        ON CONFLICT(session_key) DO UPDATE SET
+                            end_time = excluded.end_time,
+                            duration = MAX(sessions.duration, excluded.duration),
+                            bytes_sent = MAX(sessions.bytes_sent, excluded.bytes_sent),
+                            bytes_recv = MAX(sessions.bytes_recv, excluded.bytes_recv),
+                            bytes_total = MAX(sessions.bytes_total, excluded.bytes_total),
+                            packets = MAX(sessions.packets, excluded.packets),
+                            status = 'closed';
+                    """, (session_key, user, orig_src, client_vpn, orig_dst, orig_dport,
+                          proto, service, now - duration if duration else now, now, duration,
+                          orig_bytes, reply_bytes, bytes_total, packets))
+                conn.commit()
+        except Exception as e:
+            sys.stderr.write(f"Error DB ingest: {e}\n")
+
+def periodic_sweep():
+    """Cierra sesiones que quedaron huérfanas en estado active si ya no figuran en conntrack vivo."""
+    while True:
+        time.sleep(60)
+        try:
+            # Obtener claves activas actualmente en el kernel
+            res = subprocess.run(["conntrack", "-L", "-o", "extended"], capture_output=True, text=True, timeout=10)
+            live_keys = set()
+            for line in res.stdout.splitlines():
+                m = CONNTRACK_RE.search(line)
+                if m:
+                    d = m.groupdict()
+                    live_keys.add(f"{d['orig_src']}:{d['orig_sport']}->{d['orig_dst']}:{d['orig_dport']}:{d['proto'].lower()}")
+
+            now = int(time.time())
+            with DB_LOCK:
+                with get_db() as conn:
+                    # Cerrar sesiones que figuran 'active' pero no están vivas hace más de 120s
+                    rows = conn.execute("SELECT id, session_key, start_time FROM sessions WHERE status = 'active'").fetchall()
+                    for r in rows:
+                        if r["session_key"] not in live_keys:
+                            dur = max(1, now - r["start_time"])
+                            conn.execute("UPDATE sessions SET status = 'closed', end_time = ?, duration = ? WHERE id = ?",
+                                         (now, dur, r["id"]))
+                    # Purgar registros antiguos (> 90 días)
+                    cutoff = now - (90 * 86400)
+                    conn.execute("DELETE FROM sessions WHERE start_time < ?", (cutoff,))
+                    conn.commit()
+        except Exception:
+            pass
+
+# ================= Consultas para API y CLI =================
+
+def parse_time_range(range_type, custom_date=None):
+    now = datetime.now()
+    if custom_date:
+        try:
+            dt = datetime.strptime(custom_date, "%Y-%m-%d")
+            s = int(dt.replace(hour=0, minute=0, second=0).timestamp())
+            e = int(dt.replace(hour=23, minute=59, second=59).timestamp())
+            return s, e, dt.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+
+    if range_type == "yesterday" or range_type == "ayer":
+        y = now - timedelta(days=1)
+        s = int(y.replace(hour=0, minute=0, second=0).timestamp())
+        e = int(y.replace(hour=23, minute=59, second=59).timestamp())
+        return s, e, "Ayer (" + y.strftime("%d/%m/%Y") + ")"
+    elif range_type == "week" or range_type == "semana":
+        w = now - timedelta(days=7)
+        s = int(w.replace(hour=0, minute=0, second=0).timestamp())
+        e = int(now.timestamp())
+        return s, e, "Últimos 7 días"
+    elif range_type == "month" or range_type == "mes":
+        m = now - timedelta(days=30)
+        s = int(m.replace(hour=0, minute=0, second=0).timestamp())
+        e = int(now.timestamp())
+        return s, e, "Últimos 30 días"
+    else:  # today / hoy
+        s = int(now.replace(hour=0, minute=0, second=0).timestamp())
+        e = int(now.timestamp())
+        return s, e, "Hoy (" + now.strftime("%d/%m/%Y") + ")"
+
+def query_summary(range_type="today", user=None, vpn=None, custom_date=None):
+    init_db()
+    s_time, e_time, label = parse_time_range(range_type, custom_date)
+
+    conds = ["start_time BETWEEN ? AND ?"]
+    params = [s_time, e_time]
+
+    if user and user != "*":
+        conds.append("user = ?")
+        params.append(user)
+    if vpn and vpn != "*":
+        conds.append("client_vpn = ?")
+        params.append(vpn)
+
+    where = " AND ".join(conds)
+
+    with DB_LOCK:
+        with get_db() as conn:
+            tot = conn.execute(f"""
+                SELECT COUNT(*) as count,
+                       COALESCE(SUM(duration), 0) as total_duration,
+                       COALESCE(SUM(bytes_total), 0) as total_bytes,
+                       COALESCE(SUM(bytes_sent), 0) as total_sent,
+                       COALESCE(SUM(bytes_recv), 0) as total_recv
+                FROM sessions WHERE {where}
+            """, params).fetchone()
+
+            # Conexiones activas AHORA
+            live_count = conn.execute(f"""
+                SELECT COUNT(*) as count FROM sessions WHERE status = 'active'
+                {"AND user = ?" if user and user != "*" else ""}
+                {"AND client_vpn = ?" if vpn and vpn != "*" else ""}
+            """, [p for p in (user, vpn) if p and p != "*"]).fetchone()["count"]
+
+            # Desglose por VPN
+            vpns = conn.execute(f"""
+                SELECT client_vpn, COUNT(*) as sessions, SUM(duration) as duration, SUM(bytes_total) as bytes
+                FROM sessions WHERE {where}
+                GROUP BY client_vpn ORDER BY duration DESC
+            """, params).fetchall()
+
+            # Desglose por Usuario
+            users = conn.execute(f"""
+                SELECT user, COUNT(*) as sessions, SUM(duration) as duration, SUM(bytes_total) as bytes
+                FROM sessions WHERE {where}
+                GROUP BY user ORDER BY duration DESC
+            """, params).fetchall()
+
+            # Desglose por Servicio / Puerto
+            services = conn.execute(f"""
+                SELECT service, COUNT(*) as sessions, SUM(duration) as duration, SUM(bytes_total) as bytes
+                FROM sessions WHERE {where}
+                GROUP BY service ORDER BY sessions DESC LIMIT 10
+            """, params).fetchall()
+
+            # Actividad por hora (0 a 23)
+            hourly = [0] * 24
+            rows_h = conn.execute(f"""
+                SELECT cast(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) as integer) as hr,
+                       COUNT(*) as cnt
+                FROM sessions WHERE {where}
+                GROUP BY hr
+            """, params).fetchall()
+            for r in rows_h:
+                if 0 <= r["hr"] < 24:
+                    hourly[r["hr"]] = r["cnt"]
+
+            return {
+                "ok": True,
+                "label": label,
+                "start_time": s_time,
+                "end_time": e_time,
+                "total_sessions": tot["count"] or 0,
+                "sessions_count": tot["count"] or 0,
+                "total_duration": tot["total_duration"] or 0,
+                "total_duration_sec": tot["total_duration"] or 0,
+                "total_bytes": tot["total_bytes"] or 0,
+                "total_bytes_sent": tot["total_sent"] or 0,
+                "total_sent": tot["total_sent"] or 0,
+                "total_bytes_recv": tot["total_recv"] or 0,
+                "total_recv": tot["total_recv"] or 0,
+                "active_sessions": live_count,
+                "live_now": live_count,
+                "by_vpn": {r["client_vpn"]: {"sessions": r["sessions"], "duration": r["duration"] or 0, "bytes": r["bytes"] or 0} for r in vpns},
+                "by_vpn_list": [dict(r) for r in vpns],
+                "by_user": {r["user"]: {"sessions": r["sessions"], "duration": r["duration"] or 0, "bytes": r["bytes"] or 0} for r in users},
+                "by_user_list": [dict(r) for r in users],
+                "by_service": [dict(r) for r in services],
+                "hourly": hourly
+            }
+
+def query_sessions(range_type="today", user=None, vpn=None, custom_date=None, limit=100, offset=0):
+    init_db()
+    s_time, e_time, label = parse_time_range(range_type, custom_date)
+
+    conds = ["start_time BETWEEN ? AND ?"]
+    params = [s_time, e_time]
+
+    if user and user != "*":
+        conds.append("user = ?")
+        params.append(user)
+    if vpn and vpn != "*":
+        conds.append("client_vpn = ?")
+        params.append(vpn)
+
+    where = " AND ".join(conds)
+
+    with DB_LOCK:
+        with get_db() as conn:
+            rows = conn.execute(f"""
+                SELECT id, user, src_ip, client_vpn, dst_ip, dst_port, proto, service,
+                       start_time, end_time, duration, bytes_sent, bytes_recv, bytes_total,
+                       packets, status
+                FROM sessions WHERE {where}
+                ORDER BY start_time DESC
+                LIMIT ? OFFSET ?
+            """, params + [limit, offset]).fetchall()
+
+            res = []
+            for r in rows:
+                d = dict(r)
+                d["vpn"] = d["client_vpn"]
+                d["duration_sec"] = d["duration"]
+                d["start_epoch"] = d["start_time"]
+                d["end_epoch"] = d["end_time"]
+                d["start_time"] = datetime.fromtimestamp(d["start_time"]).strftime("%Y-%m-%d %H:%M:%S")
+                if d["end_time"]:
+                    d["end_time"] = datetime.fromtimestamp(d["end_time"]).strftime("%Y-%m-%d %H:%M:%S")
+                res.append(d)
+            return res
+
+def query_live():
+    init_db()
+    with DB_LOCK:
+        with get_db() as conn:
+            rows = conn.execute("""
+                SELECT id, user, src_ip, client_vpn, dst_ip, dst_port, proto, service,
+                       start_time, end_time, duration, bytes_sent, bytes_recv, bytes_total, packets, status
+                FROM sessions WHERE status = 'active'
+                ORDER BY start_time DESC LIMIT 50
+            """).fetchall()
+            res = []
+            for r in rows:
+                d = dict(r)
+                d["vpn"] = d["client_vpn"]
+                d["duration_sec"] = int(time.time()) - d["start_time"]
+                d["start_epoch"] = d["start_time"]
+                d["start_time"] = datetime.fromtimestamp(d["start_time"]).strftime("%Y-%m-%d %H:%M:%S")
+                res.append(d)
+            return res
+
+# ================= CLI =================
+
+def fmt_dur(secs):
+    if not secs:
+        return "0s"
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    s = secs % 60
+    if h > 0:
+        return f"{h}h {m}m"
+    if m > 0:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+def fmt_b(b):
+    if not b:
+        return "0 B"
+    for unit in ["B", "KB", "MB", "GB"]:
+        if b < 1024.0:
+            return f"{b:.1f} {unit}"
+        b /= 1024.0
+    return f"{b:.1f} TB"
+
+def cli_audit(argv):
+    # Uso: hubtraffic audit [usuario] [vpn] [hoy|ayer|semana|YYYY-MM-DD]
+    user = argv[0] if len(argv) > 0 and argv[0] not in ("hoy", "ayer", "semana", "mes") else None
+    vpn = argv[1] if len(argv) > 1 and argv[1] not in ("hoy", "ayer", "semana", "mes") else None
+    range_arg = "today"
+    for a in argv:
+        if a in ("hoy", "today", "ayer", "yesterday", "semana", "week", "mes", "month") or re.match(r"^\d{4}-\d{2}-\d{2}$", a):
+            range_arg = a
+            break
+
+    custom = range_arg if re.match(r"^\d{4}-\d{2}-\d{2}$", range_arg) else None
+    summary = query_summary(range_type=range_arg, user=user, vpn=vpn, custom_date=custom)
+    sessions = query_sessions(range_type=range_arg, user=user, vpn=vpn, custom_date=custom, limit=50)
+
+    print(f"\n=== Auditoría de Tráfico VPN Hub: {summary['label']} ===")
+    if user: print(f"Usuario: {user}")
+    if vpn:  print(f"VPN:     {vpn}")
+    print(f"Total:   {summary['sessions_count']} sesiones · {fmt_dur(summary['total_duration'])} conectados · {fmt_b(summary['total_bytes'])} transferidos")
+    print(f"En vivo: {summary['live_now']} sesiones activas ahora mismo\n")
+
+    if not sessions:
+        print("No se registraron sesiones en este período.")
+        return
+
+    print(f"{'ESTADO':<8} {'USUARIO':<14} {'VPN':<12} {'DESTINO':<22} {'INICIO':<10} {'FIN':<10} {'DURACIÓN':<10} {'TRÁFICO'}")
+    print("-" * 95)
+    for s in sessions:
+        st_icon = "🟢 VIVO" if s["status"] == "active" else "⚪ FIN"
+        if isinstance(s.get("start_time"), (int, float)):
+            dt_start = datetime.fromtimestamp(s["start_time"]).strftime("%H:%M:%S")
+        else:
+            dt_start = str(s.get("start_time") or "").split()[-1]
+
+        if not s.get("end_time"):
+            dt_end = "-"
+        elif isinstance(s.get("end_time"), (int, float)):
+            dt_end = datetime.fromtimestamp(s["end_time"]).strftime("%H:%M:%S")
+        else:
+            dt_end = str(s.get("end_time") or "").split()[-1]
+
+        dest = f"{s['dst_ip']}:{s['dst_port']}"
+        dur_val = s.get("duration_sec") if s.get("duration_sec") is not None else s.get("duration", 0)
+        print(f"{st_icon:<8} {s['user']:<14} {s['client_vpn']:<12} {dest:<22} {dt_start:<10} {dt_end:<10} {fmt_dur(dur_val):<10} {fmt_b(s['bytes_total'])}")
+    print()
+
+def main():
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1].lower()
+        if cmd == "run":
+            run_collector()
+            return
+        elif cmd in ("audit", "log", "reporte"):
+            cli_audit(sys.argv[2:])
+            return
+        elif cmd == "live":
+            live = query_live()
+            print(f"\nConexiones activas hacia VPNs ({len(live)}):")
+            for l in live:
+                if isinstance(l.get("start_time"), (int, float)):
+                    dt_start = datetime.fromtimestamp(l["start_time"]).strftime("%H:%M:%S")
+                    dur_sec = int(time.time()) - l["start_time"]
+                else:
+                    dt_start = str(l.get("start_time") or "").split()[-1]
+                    dur_sec = l.get("duration_sec", 0)
+                print(f"  {l['user']:<12} -> {l['client_vpn']:<12} {l['dst_ip']}:{l['dst_port']} ({l['service']}) desde {l['src_ip']} · inicio {dt_start} · {fmt_dur(dur_sec)}")
+            print()
+            print()
+            return
+
+    print("Uso: hubtraffic run | audit [usuario] [vpn] [hoy|ayer|semana|YYYY-MM-DD] | live")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,8 @@
+[Unit]
+Description=DNS del cliente %i dentro de su namespace (reescribe IP real -> virtual)
+PartOf=vpnhub@%i.service
+
+[Service]
+ExecStart=/usr/bin/ip netns exec vpn-%i /usr/sbin/dnsmasq -k --conf-file=/run/vpnhub/%i.dnsmasq
+Restart=on-failure
+RestartSec=5

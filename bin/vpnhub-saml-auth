@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""
+vpnhub-saml-auth — Autenticación automatizada Cisco AnyConnect SAML / Cisco Duo SSO.
+Ejecuta Chromium headless vía Playwright para completar el inicio de sesión
+y obtener la cookie de sesión webvpn para OpenConnect.
+"""
+import asyncio
+import os
+import re
+import shlex
+import ssl
+import sys
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+try:
+    import playwright
+except ImportError:
+    venv_py = "/home/admin/.local/share/pipx/venvs/openconnect-saml/bin/python"
+    if os.path.exists(venv_py) and sys.executable != venv_py:
+        os.execv(venv_py, [venv_py] + sys.argv)
+    raise
+
+from playwright.async_api import async_playwright
+
+ETC = Path("/etc/vpnhub")
+CLIENTES = ETC / "clientes"
+SECRETS = ETC / "secrets"
+RUN = Path("/run/vpnhub")
+
+def load_conf(name):
+    p = CLIENTES / f"{name}.conf"
+    if not p.exists():
+        sys.exit(f"No existe la configuración: {p}")
+    conf = {}
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            conf[k] = v.strip("'\"")
+    return conf
+
+def load_secrets(name):
+    p = SECRETS / f"{name}.env"
+    if not p.exists():
+        sys.exit(f"No existen las credenciales: {p}")
+    sec = {}
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            sec[k] = v.strip("'\"")
+    return sec
+
+def get_saml_url(server, authgroup):
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect, urllib.request.HTTPSHandler(context=ctx))
+    data = urllib.parse.urlencode({'group_list': authgroup, 'Login': 'Logon'}).encode()
+    b64_group = urllib.parse.quote(authgroup)
+    import base64
+    b64_cookie = base64.b64encode(authgroup.encode()).decode()
+    req = urllib.request.Request(f"https://{server}/+CSCOE+/saml/sp/login", data=data, headers={
+        'Cookie': f'tg=1{b64_cookie}; webvpnlogin=1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    })
+    try:
+        resp = opener.open(req)
+        return resp.getheader("Location")
+    except urllib.error.HTTPError as e:
+        if e.code in (302, 303):
+            return e.headers.get("Location")
+        raise
+
+async def authenticate(name):
+    conf = load_conf(name)
+    sec = load_secrets(name)
+
+    server = conf.get("SERVER", "")
+    authgroup = conf.get("AUTHGROUP", "")
+    user = sec.get("VPN_USER", "")
+    password = sec.get("VPN_PASS", "")
+
+    if not server or not user or not password:
+        sys.exit("Faltan SERVER, VPN_USER o VPN_PASS")
+
+    # Iniciar handshake SAML con el ASA
+    sso_url = get_saml_url(server, authgroup)
+    if not sso_url:
+        sys.exit("El servidor no devolvió redirección SAML (¿no usa SAML?)")
+
+    RUN.mkdir(parents=True, exist_ok=True)
+    cookie_file = RUN / f"{name}.cookie"
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(executable_path="/usr/bin/chromium", headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        # 1. Cargar login de Duo SSO
+        await page.goto(sso_url, wait_until="domcontentloaded")
+
+        # 2. Ingresar usuario / email
+        email_inp = await page.wait_for_selector("input[type=email], input[name=username], input[id=username]", timeout=15000)
+        await email_inp.fill(user)
+
+        next_btn = await page.wait_for_selector("button:has-text('Next'), input[type=submit]", timeout=10000)
+        await next_btn.click()
+
+        # 3. Ingresar contraseña
+        pwd_inp = await page.wait_for_selector("input[type=password]", timeout=15000)
+        await pwd_inp.fill(password)
+
+        login_btn = await page.wait_for_selector("button:has-text('Log in'), button:has-text('Sign in'), input[type=submit]", timeout=10000)
+        await login_btn.click()
+
+        # 4. Esperar prompt de Duo y asegurar envío de Push
+        await asyncio.sleep(4)
+        try:
+            push_btn = await page.wait_for_selector("button:has-text('Duo Push'), div[role=button]:has-text('Duo Push')", timeout=4000)
+            if push_btn and await push_btn.is_visible():
+                await push_btn.click()
+                await asyncio.sleep(1)
+        except Exception:
+            pass
+
+        # 5. Esperar aprobación del Push en el celular y redirección de vuelta a la VPN
+        try:
+            await page.wait_for_url(lambda u: server in u, timeout=120000)
+            await asyncio.sleep(2)
+        except Exception as e:
+            sys.exit(f"Tiempo de espera agotado esperando aprobación del Push en el celular: {e}")
+
+        cookies = await context.cookies()
+        webvpn_val = None
+        for c in cookies:
+            if c["name"] == "webvpn" and server in c.get("domain", ""):
+                webvpn_val = c["value"]
+                break
+
+        await browser.close()
+
+        if not webvpn_val:
+            # Buscar cualquier cookie webvpn
+            for c in cookies:
+                if c["name"] == "webvpn":
+                    webvpn_val = c["value"]
+                    break
+
+        if not webvpn_val:
+            sys.exit("No se encontró la cookie 'webvpn' después de la redirección")
+
+        cookie_file.write_text(webvpn_val)
+        os.chmod(cookie_file, 0o600)
+        print(webvpn_val)
+        return webvpn_val
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        sys.exit("Uso: vpnhub-saml-auth <cliente>")
+    client_name = sys.argv[1].strip().lower()
+    asyncio.run(authenticate(client_name))

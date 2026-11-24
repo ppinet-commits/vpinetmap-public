@@ -1,0 +1,25 @@
+# Configuración de ejemplo: FortiGate IPsec Dialup (IKEv1 o IKEv2)
+# Copiar este archivo a /etc/vpnhub/clientes/<nombre>.conf
+ID=2
+TYPE=forti_ipsec
+SERVER="ipsec.ejemplo.com"
+PORT=
+TRUSTED_CERT=""
+AUTHGROUP=""
+MAP="10.202.1.0/24=192.168.1.0/24 10.202.88.0/24=192.168.88.0/24"
+DIRECT=""
+IGNORE=""
+AUTO_MAP="1"
+CHECK_IP="192.168.1.1"
+HOSTS="fortigate=192.168.1.1 switch=192.168.1.254"
+DNS_SERVER=""
+DOMAINS=""
+OTP_REQUIRED=0
+DESCRIPTION="Sucursal Remota IPsec Dialup"
+OWNER=""
+CREATED_BY="admin"
+DISABLED=0
+DISABLED_BY=""
+DNS_ALIAS="sucursal"
+IKE_VERSION="1"
+DHGROUP="dh14"

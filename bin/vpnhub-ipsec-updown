@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# vpnhub-ipsec-updown — script updown de strongSwan para túneles IKEv2
+# Asigna la Virtual IP (VIP) a la interfaz XFRM (ipsec<ID>) y añade rutas.
+set -euo pipefail
+
+dev="ipsec${PLUTO_IF_ID_IN:-}"
+
+case "${PLUTO_VERB:-}" in
+  up-client|up-host)
+    if [[ -n "${PLUTO_MY_SOURCEIP:-}" && -n "$dev" ]]; then
+      ip addr add "$PLUTO_MY_SOURCEIP/32" dev "$dev" 2>/dev/null || true
+      ip link set "$dev" up 2>/dev/null || true
+      # Si el peer remoto está definido, asegurar ruta host /32 por el gateway del namespace
+      # para evitar que 128.0.0.0/1 capture los paquetes de control IKE / NAT-T
+      if [[ -n "${PLUTO_PEER:-}" && -n "${PLUTO_IF_ID_IN:-}" ]]; then
+        ip route replace "$PLUTO_PEER/32" via "100.64.${PLUTO_IF_ID_IN}.1" dev "vn${PLUTO_IF_ID_IN}" 2>/dev/null || true
+      fi
+      # Redes hacia el túnel (0/1 y 128/1 para no pisar la default hacia el hub)
+      ip route replace 0.0.0.0/1 dev "$dev" src "$PLUTO_MY_SOURCEIP" 2>/dev/null || true
+      ip route replace 128.0.0.0/1 dev "$dev" src "$PLUTO_MY_SOURCEIP" 2>/dev/null || true
+    fi
+    ;;
+  down-client|down-host)
+    if [[ -n "${PLUTO_MY_SOURCEIP:-}" && -n "$dev" ]]; then
+      ip route del 0.0.0.0/1 dev "$dev" 2>/dev/null || true
+      ip route del 128.0.0.0/1 dev "$dev" 2>/dev/null || true
+      ip addr del "$PLUTO_MY_SOURCEIP/32" dev "$dev" 2>/dev/null || true
+    fi
+    ;;
+esac

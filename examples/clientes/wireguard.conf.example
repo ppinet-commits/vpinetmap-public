@@ -1,0 +1,23 @@
+# Configuración de ejemplo: WireGuard (MikroTik BTH, RouterOS, Linux)
+# Copiar este archivo a /etc/vpnhub/clientes/<nombre>.conf
+ID=4
+TYPE=wireguard
+SERVER=""
+PORT=""
+TRUSTED_CERT=""
+AUTHGROUP=""
+MAP="10.204.0.0/24=192.168.0.0/24 10.204.30.0/24=10.0.30.0/24"
+DIRECT=""
+IGNORE=""
+AUTO_MAP="1"
+CHECK_IP="192.168.0.1"
+HOSTS="router=192.168.0.1 switch=10.0.30.100"
+DNS_SERVER=""
+DOMAINS=""
+OTP_REQUIRED=0
+DESCRIPTION="Túnel WireGuard Sitio a Sitio"
+OWNER=""
+CREATED_BY="admin"
+DISABLED=0
+DISABLED_BY=""
+DNS_ALIAS="wg-sitio"

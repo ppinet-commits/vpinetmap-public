@@ -1,0 +1,23 @@
+# Configuración de ejemplo: OpenVPN (.ovpn)
+# Copiar este archivo a /etc/vpnhub/clientes/<nombre>.conf
+ID=5
+TYPE=openvpn
+SERVER=""
+PORT=""
+TRUSTED_CERT=""
+AUTHGROUP=""
+MAP="10.205.0.0/24=192.168.0.0/24"
+DIRECT=""
+IGNORE=""
+AUTO_MAP="1"
+CHECK_IP="192.168.0.1"
+HOSTS="router=192.168.0.1"
+DNS_SERVER=""
+DOMAINS=""
+OTP_REQUIRED=0
+DESCRIPTION="Túnel OpenVPN"
+OWNER=""
+CREATED_BY="admin"
+DISABLED=0
+DISABLED_BY=""
+DNS_ALIAS="openvpn"

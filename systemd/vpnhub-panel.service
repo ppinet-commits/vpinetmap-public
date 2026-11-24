@@ -1,0 +1,14 @@
+[Unit]
+Description=Panel web del hub VPN (https :8443)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=|/etc/vpnhub/users.json
+ConditionPathExists=|/etc/vpnhub/panel.passwd
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/vpnhub-panel/vpnhub-panel.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

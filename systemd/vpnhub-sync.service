@@ -1,0 +1,6 @@
+[Unit]
+Description=Hub VPN: re-aplica redes dinámicas, NETMAP, rutas y DNS
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hubnets sync

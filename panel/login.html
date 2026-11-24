@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iniciar sesión · VPiNetmap</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="alternate icon" href="/favicon.ico">
+<style>
+:root{
+  --bg:#0f1115; --card:#171a20; --fg:#e6e8eb; --muted:#98a1b0; --line:#262b33;
+  --ok:#4cc38a; --ok-bg:#12261d; --bad:#f07a5a; --bad-bg:#2c1712; --warn:#f0b35a; --warn-bg:#2b2112;
+  --accent:#7aa2ff; --accent-bg:#18213a; --code:#1f232b; --shadow:0 12px 40px rgba(0,0,0,.5);
+  --vpi-i:#cbd5e1;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f5f6f8; --card:#fff; --fg:#1b1f24; --muted:#667085; --line:#e4e7ec;
+    --ok:#12805c; --ok-bg:#e7f6ef; --bad:#c4320a; --bad-bg:#fdeee8; --warn:#a15c07; --warn-bg:#fef4e2;
+    --accent:#2453d6; --accent-bg:#eaf0ff; --code:#f1f3f6; --shadow:0 12px 40px rgba(16,24,40,.18);
+    --vpi-i:#8c96a5;
+  }
+}
+*{box-sizing:border-box}
+body{
+  margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px;
+}
+.wrap{width:100%; max-width:400px; display:flex; flex-direction:column; gap:20px}
+.brand{text-align:center; display:flex; flex-direction:column; align-items:center; gap:8px}
+.brand-badge{
+  width:48px; height:48px; border-radius:12px; background:var(--accent); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700;
+  box-shadow:0 4px 16px rgba(36,83,214,.35);
+}
+.brand h1{margin:0; font-size:20px; font-weight:700; letter-spacing:-.02em}
+.brand p{margin:0; font-size:13px; color:var(--muted)}
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:14px;
+  padding:24px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:16px;
+}
+.fl{display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--muted)}
+.fl input{
+  padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+  background:var(--bg); color:var(--fg); font:inherit; font-size:14px;
+}
+.fl input:focus{outline:2px solid var(--accent); outline-offset:-1px}
+button.submit{
+  padding:10px 16px; border:none; border-radius:8px; background:var(--accent); color:#fff;
+  font:inherit; font-size:14px; font-weight:600; cursor:pointer; transition:opacity .15s; margin-top:4px;
+}
+button.submit:hover{opacity:.9}
+button.submit:disabled{opacity:.5; cursor:wait}
+.err{
+  background:var(--bad-bg); color:var(--bad); border:1px solid var(--bad);
+  border-radius:8px; padding:10px 12px; font-size:13px; line-height:1.4; display:none;
+}
+.step{display:flex; flex-direction:column; gap:16px}
+.totp-icon{
+  width:56px; height:56px; border-radius:50%; background:var(--accent-bg); color:var(--accent);
+  display:flex; align-items:center; justify-content:center; font-size:24px; margin:0 auto;
+}
+.user-badge{
+  align-self:center; background:var(--code); color:var(--muted);
+  padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600;
+}
+.totp-input{
+  font:24px/1.2 ui-monospace,Consolas,monospace !important; letter-spacing:6px; text-align:center;
+  padding:10px !important;
+}
+.back-link{
+  text-align:center; color:var(--muted); text-decoration:none; font-size:13px; cursor:pointer;
+  border:none; background:none; padding:4px;
+}
+.back-link:hover{color:var(--fg); text-decoration:underline}
+.shield-wrap{
+  position:relative; width:70px; height:70px; margin:0 auto;
+  display:flex; align-items:center; justify-content:center;
+}
+.pulse{
+  position:absolute; width:100%; height:100%; border-radius:50%;
+  background:rgba(36,83,214,.2); animation:pulse 1.8s infinite ease-out;
+}
+.shield{
+  width:50px; height:50px; border-radius:50%; background:#10b981; color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:24px; z-index:2;
+}
+@keyframes pulse{
+  0%{transform:scale(0.8); opacity:1}
+  100%{transform:scale(1.5); opacity:0}
+}
+.footer{text-align:center; font-size:12px; color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div style="margin-bottom:6px">
+      <img src="/emblem.png" alt="VPiNetmap" style="height:70px;width:auto;display:block">
+    </div>
+    <h1 style="letter-spacing:-.02em;font-size:26px;display:inline-flex;align-items:center;justify-content:center;gap:0;font-weight:700;margin:0">
+      <span style="color:#00c0f0">VP</span><span style="color:var(--vpi-i,#8c96a5)">i</span><span style="color:#00c0f0">N</span><span style="color:var(--fg);font-weight:550">etmap</span>
+    </h1>
+    <p style="margin:6px 0 0 0">Multi-Client VPN Gateway & Appliance</p>
+  </div>
+
+  <div class="card">
+    <div class="err" id="errBox"></div>
+
+    <!-- PASO 1: USUARIO Y CONTRASEÑA -->
+    <form id="loginForm" class="step" autocomplete="on">
+      <label class="fl">Usuario
+        <input type="text" name="username" id="username" autocomplete="username" autofocus required placeholder="ej. admin">
+      </label>
+      <label class="fl">Contraseña
+        <input type="password" name="password" id="password" autocomplete="current-password" required placeholder="••••••••">
+      </label>
+      <button type="submit" class="submit" id="btnLogin">Iniciar sesión</button>
+    </form>
+
+    <!-- PASO 2A: GOOGLE AUTHENTICATOR (TOTP) -->
+    <form id="totpForm" class="step" style="display:none" autocomplete="off">
+      <div class="totp-icon">🔑</div>
+      <div class="user-badge" id="totpUser"></div>
+      <div style="text-align:center">
+        <b style="font-size:15px">Google Authenticator</b>
+        <div style="font-size:13px; color:var(--muted); margin-top:4px">
+          Abrí la aplicación en tu celular e ingresá el código de 6 dígitos.
+        </div>
+      </div>
+      <input type="text" name="code" id="totpCode" class="totp-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" autocomplete="one-time-code" required>
+      <div id="totpStatus" style="text-align:center;font-size:13px;color:var(--accent);min-height:18px;font-weight:500"></div>
+      <label style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;margin:2px 0">
+        <input type="checkbox" id="totpTrust" checked style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+        <span>Confiar en este dispositivo por 30 días</span>
+      </label>
+      <button type="button" class="back-link" id="btnBackTotp">← Cancelar y volver al inicio</button>
+    </form>
+
+    <!-- PASO 2B: CISCO DUO MOBILE -->
+    <form id="duoForm" class="step" style="display:none" autocomplete="off">
+      <div class="shield-wrap">
+        <div class="pulse"></div>
+        <div class="shield">📱</div>
+      </div>
+      <div class="user-badge" id="duoUser"></div>
+      <div style="text-align:center">
+        <b style="font-size:15px">Cisco Duo Mobile</b>
+        <div style="font-size:13px; color:var(--muted); margin-top:4px" id="duoStatus">
+          Enviamos una notificación Push a tu teléfono. Tocá «Aprobar» para ingresar.
+        </div>
+      </div>
+
+      <div id="duoPassBox" style="margin-top:6px; display:none; flex-direction:column; gap:8px">
+        <label class="fl">Código numérico Duo Mobile
+          <input type="text" name="passcode" id="duoPasscode" inputmode="numeric" placeholder="ej. 123456" maxlength="10">
+        </label>
+        <button type="button" class="submit" id="btnDuoPasscode">Verificar código</button>
+      </div>
+
+      <label style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;margin:2px 0">
+        <input type="checkbox" id="duoTrust" checked style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+        <span>Confiar en este dispositivo por 30 días</span>
+      </label>
+      <button type="button" class="back-link" id="btnShowDuoPass" style="font-size:12.5px">¿No te llegó la notificación? Ingresar código numérico</button>
+      <button type="button" class="back-link" id="btnBackDuo">← Cancelar y volver al inicio</button>
+    </form>
+
+    <!-- PASO 2C: CAMBIO OBLIGATORIO DE CONTRASEÑA -->
+    <form id="changePwForm" class="step" style="display:none" autocomplete="off">
+      <div class="totp-icon" style="background:rgba(234,179,8,.15);border-color:rgba(234,179,8,.3);color:#eab308">🔒</div>
+      <div class="user-badge" id="changePwUser"></div>
+      <div style="text-align:center">
+        <b style="font-size:16px;color:#f8fafc">Cambio de Contraseña Obligatorio</b>
+        <div style="font-size:13px; color:var(--muted); margin-top:4px; line-height:1.4">
+          Esta es la primera vez que iniciás sesión con la cuenta de administrador. Por seguridad, definí una nueva contraseña para continuar.
+        </div>
+      </div>
+      <label class="fl">Nueva Contraseña
+        <input type="password" id="newPassword" autocomplete="new-password" required minlength="8" placeholder="Mínimo 8 caracteres">
+      </label>
+      <label class="fl">Confirmar Nueva Contraseña
+        <input type="password" id="confirmPassword" autocomplete="new-password" required minlength="8" placeholder="Repetir contraseña">
+      </label>
+      <button type="submit" class="submit" id="btnChangePw">Guardar contraseña e ingresar</button>
+      <button type="button" class="back-link" id="btnBackChangePw">← Cancelar y volver al inicio</button>
+    </form>
+  </div>
+
+  <div class="footer">
+    VPiNetmap &middot; Gateway Multi-VPN &middot; Acceso Seguro
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const errBox = $("#errBox");
+let currentTempToken = "", duoPollTimer = null;
+
+function showError(msg){
+  if (!msg){ errBox.style.display = "none"; errBox.textContent = ""; return; }
+  errBox.textContent = msg;
+  errBox.style.display = "block";
+}
+
+function showStep(step){
+  showError("");
+  $("#loginForm").style.display = step === "login" ? "flex" : "none";
+  $("#totpForm").style.display = step === "totp" ? "flex" : "none";
+  $("#duoForm").style.display = step === "duo" ? "flex" : "none";
+  $("#changePwForm").style.display = step === "change_password" ? "flex" : "none";
+  if (duoPollTimer) { clearInterval(duoPollTimer); duoPollTimer = null; }
+  if (step === "totp") {
+    totpSubmitting = false;
+    const inp = $("#totpCode");
+    inp.disabled = false;
+    inp.value = "";
+    $("#totpStatus").textContent = "";
+  }
+}
+
+// 1. Enviar Usuario + Contraseña
+$("#loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  showError("");
+  const u = $("#username").value.trim().toLowerCase();
+  const p = $("#password").value;
+  const btn = $("#btnLogin");
+  btn.disabled = true; btn.textContent = "Verificando…";
+
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-Requested-With": "vpnhub"},
+      body: JSON.stringify({username: u, password: p})
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw new Error(j.error || "Usuario o contraseña incorrectos");
+
+    if (j.step === "change_password") {
+      currentTempToken = j.temp_token;
+      $("#changePwUser").textContent = "Usuario: " + j.username;
+      showStep("change_password");
+      setTimeout(() => $("#newPassword").focus(), 100);
+      return;
+    }
+
+    if (j.step === "totp") {
+      currentTempToken = j.temp_token;
+      $("#totpUser").textContent = "Usuario: " + j.username;
+      showStep("totp");
+      setTimeout(() => $("#totpCode").focus(), 100);
+      return;
+    }
+
+    if (j.step === "duo") {
+      currentTempToken = j.temp_token;
+      $("#duoUser").textContent = "Usuario: " + j.username;
+      showStep("duo");
+      if (j.txid) startDuoPolling(j.txid);
+      return;
+    }
+
+    // Login directo (sin 2FA)
+    location.href = j.redirect || "/";
+  } catch(err) {
+    showError(err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Iniciar sesión";
+  }
+});
+
+// 2A. Enviar TOTP automático al completar 6 dígitos
+let totpSubmitting = false;
+
+async function doTotpSubmit(){
+  if (totpSubmitting) return;
+  const raw = $("#totpCode").value || "";
+  const code = raw.replace(/\D/g, "");
+  if (code.length !== 6) return;
+
+  totpSubmitting = true;
+  showError("");
+  const input = $("#totpCode");
+  input.disabled = true;
+  const statusEl = $("#totpStatus");
+  statusEl.style.color = "var(--accent)";
+  statusEl.textContent = "Verificando código…";
+
+  try {
+    const trust = !!$("#totpTrust")?.checked;
+    const r = await fetch("/api/login/2fa", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-Requested-With": "vpnhub"},
+      body: JSON.stringify({temp_token: currentTempToken, type: "totp", code, trust_device: trust})
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw new Error(j.error || "Código incorrecto o expirado");
+    statusEl.style.color = "var(--ok)";
+    statusEl.textContent = "✓ Correcto, ingresando…";
+    location.href = j.redirect || "/";
+  } catch(err) {
+    showError(err.message);
+    statusEl.textContent = "";
+    input.disabled = false;
+    input.value = "";
+    totpSubmitting = false;
+    setTimeout(() => input.focus(), 50);
+  }
+}
+
+$("#totpCode").addEventListener("input", e => {
+  const clean = e.target.value.replace(/\D/g, "").slice(0, 6);
+  if (e.target.value !== clean) e.target.value = clean;
+  if (clean.length === 6) {
+    doTotpSubmit();
+  }
+});
+
+$("#totpForm").addEventListener("submit", e => {
+  e.preventDefault();
+  doTotpSubmit();
+});
+
+// 2B. Polling Cisco Duo
+function startDuoPolling(txid){
+  const statusEl = $("#duoStatus");
+  statusEl.textContent = "Esperando que apruebes la notificación en tu celular…";
+  duoPollTimer = setInterval(async () => {
+    try {
+      const r = await fetch("/api/login/2fa", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-Requested-With": "vpnhub"},
+        body: JSON.stringify({temp_token: currentTempToken, type: "duo", action: "status", txid, trust_device: !!$("#duoTrust")?.checked})
+      });
+      const j = await r.json().catch(() => ({}));
+      if (j.status === "allow" || j.ok) {
+        clearInterval(duoPollTimer);
+        statusEl.textContent = "¡Aprobado! Ingresando…";
+        location.href = j.redirect || "/";
+      } else if (j.status === "deny") {
+        clearInterval(duoPollTimer);
+        showError("Acceso denegado en Cisco Duo.");
+      }
+    } catch(e){}
+  }, 2000);
+}
+
+// 2B. Passcode Duo manual
+$("#btnShowDuoPass").onclick = () => {
+  $("#duoPassBox").style.display = "flex";
+  $("#btnShowDuoPass").style.display = "none";
+  $("#duoPasscode").focus();
+};
+
+$("#btnDuoPasscode").onclick = async () => {
+  showError("");
+  const code = $("#duoPasscode").value.trim();
+  if (!code) return showError("Ingresá el código numérico de Duo");
+  const btn = $("#btnDuoPasscode");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/login/2fa", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-Requested-With": "vpnhub"},
+      body: JSON.stringify({temp_token: currentTempToken, type: "duo", action: "passcode", code, trust_device: !!$("#duoTrust")?.checked})
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw new Error(j.error || "Código Duo inválido");
+    location.href = j.redirect || "/";
+  } catch(err) {
+    showError(err.message);
+    btn.disabled = false;
+  }
+};
+
+$("#btnBackTotp").onclick = () => { showStep("login"); currentTempToken = ""; };
+$("#btnBackDuo").onclick = () => { showStep("login"); currentTempToken = ""; };
+
+// 2C. Cambio obligatorio de contraseña
+$("#changePwForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  showError("");
+  const p1 = $("#newPassword").value;
+  const p2 = $("#confirmPassword").value;
+  if (p1 !== p2) {
+    showError("Las contraseñas no coinciden.");
+    return;
+  }
+  if (p1.length < 8) {
+    showError("La nueva contraseña debe tener al menos 8 caracteres.");
+    return;
+  }
+  if (p1.toLowerCase() === "admin") {
+    showError("Debés elegir una contraseña diferente a 'admin'.");
+    return;
+  }
+  const btn = $("#btnChangePw");
+  btn.disabled = true; btn.textContent = "Actualizando contraseña…";
+
+  try {
+    const r = await fetch("/api/login/change-password", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-Requested-With": "vpnhub"},
+      body: JSON.stringify({temp_token: currentTempToken, new_password: p1})
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw new Error(j.error || "No se pudo actualizar la contraseña");
+
+    location.href = j.redirect || "/";
+  } catch(err) {
+    showError(err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Guardar contraseña e ingresar";
+  }
+});
+
+$("#btnBackChangePw").onclick = () => {
+  currentTempToken = "";
+  $("#newPassword").value = "";
+  $("#confirmPassword").value = "";
+  showStep("login");
+};
+</script>
+</body>
+</html>

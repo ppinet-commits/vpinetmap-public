@@ -1,0 +1,606 @@
+#!/usr/bin/env bash
+# hubctl — gestiona túneles VPN de clientes, cada uno en su propio network namespace.
+#
+#   hubctl up <cliente>      levanta (systemd: vpnhub@<cliente>)
+#   hubctl down <cliente>    baja el túnel y borra su namespace
+#   hubctl status            estado de todos los clientes
+#   hubctl cert <cliente>    muestra el sha256 del certificado del servidor (para TRUSTED_CERT)
+#   hubctl routes <cliente>  rutas dentro del namespace
+#   hubctl maps <cliente>    redes del cliente (manuales y dinámicas)  [= hubnets list]
+#   hubctl dns               re-aplica redes y DNS de todos              [= hubnets sync]
+#   hubctl run <cliente>     (lo usa systemd) arma la red y ejecuta el cliente VPN en primer plano
+#
+# Config no secreta:  /etc/vpnhub/clientes/<cliente>.conf
+# Secretos:           /etc/vpnhub/secrets/<cliente>.env   (forti: VPN_USER, VPN_PASS · l2tp: + VPN_PSK)
+#                     /etc/vpnhub/secrets/<cliente>.wg    (wireguard: el .conf tal cual lo exporta el cliente)
+# Redes, NETMAP, rutas del hub y DNS: hubnets (/usr/local/sbin/hubnets)
+set -euo pipefail
+
+ETC=/etc/vpnhub
+RUN=/run/vpnhub
+TRANSIT=100.64.0.0/16          # enlaces hub<->namespace: 100.64.<ID>.0/30
+HUBNETS=/usr/local/sbin/hubnets
+
+die(){ echo "ERROR: $*" >&2; exit 1; }
+[[ $EUID -eq 0 ]] || die "ejecutar con sudo"
+
+load(){
+  C="$1"; local f="$ETC/clientes/$C.conf"
+  [[ -f $f ]] || die "no existe $f"
+  ID="" TYPE="" SERVER="" PORT="" TRUSTED_CERT="" CHECK_IP="" EXTRA_ARGS="" OTP_REQUIRED="" AUTHGROUP="" DHGROUP="" IKE_VERSION="" DISABLED="" DISABLED_BY=""
+  # shellcheck disable=SC1090
+  source "$f"
+  [[ $ID =~ ^[0-9]+$ && $ID -ge 1 && $ID -le 250 ]] || die "$C: ID inválido (1-250)"
+  NS="vpn-$C"; VH="vh$ID"; VN="vn$ID"
+  HUB_IP="100.64.$ID.1"; NS_IP="100.64.$ID.2"
+  WAN_IF=$(ip route show default | awk '{print $5; exit}')
+}
+
+sync_nets(){ "$HUBNETS" sync "$C" || echo "AVISO: hubnets sync falló" >&2; }
+
+ipt(){ # ipt <tabla> <regla...>  (agrega solo si no existe)
+  local t=$1; shift
+  iptables -t "$t" -C "$@" 2>/dev/null || iptables -t "$t" -A "$@"
+}
+
+hub_base(){ # reglas globales del hub (idempotente)
+  sysctl -qw net.ipv4.ip_forward=1
+  iptables -t nat -N VPNHUB_POST 2>/dev/null || true
+  iptables -N VPNHUB_FWD 2>/dev/null || true
+  ipt nat POSTROUTING -j VPNHUB_POST
+  ipt filter FORWARD -j VPNHUB_FWD
+  # namespaces salen a internet (para alcanzar el servidor VPN) por la WAN del hub
+  ipt nat VPNHUB_POST -s "$TRANSIT" -o "$WAN_IF" -j MASQUERADE
+  # aislamiento: un cliente nunca llega a otro
+  ipt filter VPNHUB_FWD -i "vh+" -o "vh+" -j DROP
+}
+
+net_up(){
+  hub_base
+  ip netns add "$NS" 2>/dev/null || true
+  if ! ip link show "$VH" &>/dev/null; then
+    ip link add "$VH" type veth peer name "$VN" netns "$NS"
+  fi
+  ip addr replace "$HUB_IP/30" dev "$VH"; ip link set "$VH" up
+  ip -n "$NS" link set lo up
+  ip -n "$NS" addr replace "$NS_IP/30" dev "$VN"; ip -n "$NS" link set "$VN" up
+  ip -n "$NS" route replace default via "$HUB_IP"
+  ip netns exec "$NS" sysctl -qw net.ipv4.ip_forward=1
+  mkdir -p "/etc/netns/$NS"
+  echo "nameserver 1.1.1.1" > "/etc/netns/$NS/resolv.conf"
+
+  # --- dentro del namespace (los NETMAP de PREROUTING los pone hubnets) ---
+  local x="ip netns exec $NS"
+  $x iptables -t nat -F; $x iptables -F
+  $x iptables -t nat -A POSTROUTING ! -o "$VN" -j MASQUERADE      # todo sale al túnel con la IP del túnel
+  $x iptables -P FORWARD DROP                                      # la red del cliente no puede entrar al hub
+  $x iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  $x iptables -A FORWARD -i "$VN" -j ACCEPT
+
+  # --- en el hub ---
+  ipt nat VPNHUB_POST -o "$VH" -j SNAT --to-source "$HUB_IP"     # la LAN propia nunca se ve dentro del ns
+}
+
+net_down(){
+  systemctl stop "vpnhub-dns@$C" 2>/dev/null || true
+  rm -f "$RUN/$C".{dnsmasq,ofv,map,vici,l2tp-control,xl2tpd.pid,otp,otp-wait,ovpn-auth,ovpn-keypass}
+  iptables -t nat -D VPNHUB_POST -o "$VH" -j SNAT --to-source "$HUB_IP" 2>/dev/null || true
+  ip link del "$VH" 2>/dev/null || true          # se llevan las rutas del hub hacia este ns
+  ip netns del "$NS" 2>/dev/null || true
+  rm -rf "/etc/netns/$NS"
+}
+
+load_secrets(){ # load_secrets VAR... -> exige que existan
+  local sec="$ETC/secrets/$C.env" v
+  [[ -f $sec ]] || die "faltan credenciales: $sec (cargarlas desde el panel)"
+  VPN_USER="" VPN_PASS="" VPN_PSK=""
+  # shellcheck disable=SC1090
+  source "$sec"
+  for v in "$@"; do [[ -n ${!v} ]] || die "$sec: falta $v"; done
+}
+
+# ---------------- FortiGate SSL VPN ----------------
+run_forti(){
+  load_secrets VPN_USER VPN_PASS
+  install -d -m 700 "$RUN"
+  local cfg="$RUN/$C.ofv" otp=""
+  if [[ $OTP_REQUIRED == 1 ]]; then   # 2FA: esperar el código que se carga desde el panel
+    touch "$RUN/$C.otp-wait"; echo "esperando código OTP (panel web)"
+    while [[ ! -s $RUN/$C.otp ]]; do sleep 2; done
+    otp=$(<"$RUN/$C.otp"); rm -f "$RUN/$C.otp" "$RUN/$C.otp-wait"
+  fi
+  ( umask 077
+    { echo "host = $SERVER"; echo "port = ${PORT:-443}"
+      echo "username = $VPN_USER"; echo "password = $VPN_PASS"
+      [[ -n $TRUSTED_CERT ]] && echo "trusted-cert = $TRUSTED_CERT"
+      [[ -n $otp ]] && echo "otp = $otp"
+      echo "set-routes = 1"; echo "set-dns = 0"; echo "pppd-use-peerdns = 0"
+    } > "$cfg" )
+  # las rutas las empuja el FortiGate después de conectar: re-sincronizar varias veces
+  ( for _ in 1 2 3 4 5 6; do sleep 10; "$HUBNETS" sync "$C" >/dev/null 2>&1 || true; done ) &
+  exec ip netns exec "$NS" openfortivpn -c "$cfg" $EXTRA_ARGS
+}
+
+# ---------------- FortiGate IPsec Dialup (strongSwan IKEv1/IKEv2) ----------------
+run_forti_ipsec(){
+  load_secrets VPN_USER VPN_PASS VPN_PSK
+  local ver="${IKE_VERSION:-2}"
+  local E="/etc/netns/$NS" x="ip netns exec $NS"
+  local vici="unix://$RUN/$C.vici" xfrmif="ipsec$ID"
+  install -d -m 700 "$RUN" "$E/swanctl" "$E/swanctl/conf.d"
+  rm -f "$RUN/$C.vici"
+
+  # Crear interfaz XFRM en el namespace
+  $x ip link del "$xfrmif" 2>/dev/null || true
+  $x ip link add "$xfrmif" type xfrm dev "$VN" if_id "$ID"
+  $x ip link set "$xfrmif" up
+
+  # Resolver SERVER a IP y agregar ruta host /32 hacia el hub para evitar bucles con 128.0.0.0/1
+  local srv_ip
+  srv_ip=$(getent ahostsv4 "$SERVER" 2>/dev/null | awk '{print $1; exit}')
+  if [[ -n "$srv_ip" ]]; then
+    $x ip route replace "$srv_ip/32" via "$HUB_IP" dev "$VN" 2>/dev/null || true
+  fi
+
+  # strongSwan propio del namespace
+  cat > "$E/strongswan.conf" <<EOF
+charon {
+  load_modular = yes
+  install_routes = no
+  install_virtual_ip = no
+  plugins {
+    include /etc/strongswan.d/charon/*.conf
+    forecast { load = no }
+    vici { socket = $vici }
+    updown {
+      script = /usr/local/sbin/vpnhub-ipsec-updown
+    }
+  }
+}
+include /etc/strongswan.d/*.conf
+EOF
+
+  local psk_hex; psk_hex=$(printf '%s' "$VPN_PSK" | od -An -tx1 | tr -d ' \n')
+  local dh="${DHGROUP:-dh14}"
+  [[ $dh == dh* ]] || dh="dh$dh"
+  local modp="modp2048"
+  case "$dh" in
+    dh14) modp="modp2048" ;;
+    dh15) modp="modp3072" ;;
+    dh16) modp="modp4096" ;;
+    dh19) modp="ecp256" ;;
+    dh20) modp="ecp384" ;;
+    dh5)  modp="modp1536" ;;
+    dh2)  modp="modp1024" ;;
+  esac
+
+  local proposals="aes256-sha256-$modp,aes128-sha256-$modp,aes256-sha1-$modp,aes128-sha1-$modp,default"
+  local esp_proposals="aes256-sha256-$modp,aes128-sha256-$modp,aes256-sha256,aes128-sha256,aes256-sha1-$modp,aes128-sha1-$modp,default"
+
+  ( umask 077; cat > "$E/swanctl/swanctl.conf" <<EOF
+connections {
+  forti {
+    version = $ver
+$([[ "$ver" == "1" ]] && echo "    aggressive = yes")
+    remote_addrs = $SERVER
+    vips = 0.0.0.0
+    proposals = $proposals
+    dpd_delay = 30s
+EOF
+  if [[ "$ver" == "1" ]]; then
+    # IKEv1: Autenticación PSK (con ID local si hay AUTHGROUP), y XAuth si hay usuario
+    cat >> "$E/swanctl/swanctl.conf" <<EOF
+    local {
+      auth = psk
+$([[ -n ${AUTHGROUP:-} ]] && echo "      id = \"$AUTHGROUP\"")
+    }
+EOF
+    if [[ -n ${VPN_USER:-} ]]; then
+      cat >> "$E/swanctl/swanctl.conf" <<EOF
+    local-xauth {
+      auth = xauth
+      xauth_id = "$VPN_USER"
+    }
+EOF
+    fi
+  else
+    # IKEv2: EAP-MSCHAPv2 si hay usuario, o PSK directo
+    if [[ -n ${VPN_USER:-} ]]; then
+      cat >> "$E/swanctl/swanctl.conf" <<EOF
+    local {
+      auth = eap-mschapv2
+      eap_id = "$VPN_USER"
+    }
+EOF
+    else
+      cat >> "$E/swanctl/swanctl.conf" <<EOF
+    local {
+      auth = psk
+    }
+EOF
+    fi
+  fi
+  cat >> "$E/swanctl/swanctl.conf" <<EOF
+    remote {
+      auth = psk
+    }
+    children {
+      net {
+        remote_ts = 0.0.0.0/0
+        esp_proposals = $esp_proposals
+        dpd_action = restart
+        if_id_in = $ID
+        if_id_out = $ID
+        updown = /usr/local/sbin/vpnhub-ipsec-updown
+      }
+    }
+  }
+}
+secrets {
+EOF
+  if [[ -n ${VPN_USER:-} && -n ${VPN_PASS:-} ]]; then
+    if [[ "$ver" == "1" ]]; then
+      cat >> "$E/swanctl/swanctl.conf" <<EOF
+  xauth-user {
+    id = "$VPN_USER"
+    secret = "$VPN_PASS"
+  }
+EOF
+    else
+      cat >> "$E/swanctl/swanctl.conf" <<EOF
+  eap-user {
+    id = "$VPN_USER"
+    secret = "$VPN_PASS"
+  }
+EOF
+    fi
+  fi
+  cat >> "$E/swanctl/swanctl.conf" <<EOF
+  ike-psk {
+    secret = 0x$psk_hex
+  }
+}
+EOF
+  )
+
+  local charon_pid
+  $x /usr/sbin/charon-systemd &
+  charon_pid=$!
+  trap '$x swanctl --terminate --ike forti -s 2>/dev/null || true; kill $charon_pid 2>/dev/null || true; $x ip link del "$xfrmif" 2>/dev/null || true' EXIT
+
+  for _ in $(seq 1 30); do [[ -S $RUN/$C.vici ]] && break; sleep 0.2; done
+  [[ -S $RUN/$C.vici ]] || die "charon-systemd no arrancó en $NS"
+
+  $x swanctl --load-all --uri "$vici" >/dev/null || true
+  $x swanctl --initiate --child net --uri "$vici" || echo "aviso: initiate en curso"
+
+  ( for _ in 1 2 3 4 5 6; do sleep 10; "$HUBNETS" sync "$C" >/dev/null 2>&1 || true; done ) &
+
+  while sleep 15; do
+    kill -0 "$charon_pid" 2>/dev/null || die "charon terminó"
+    local has_ip
+    has_ip=$(ip -n "$NS" -4 -br addr show dev "$xfrmif" 2>/dev/null | awk '{print $3}' || true)
+    if [[ -z $has_ip ]]; then
+      sleep 5
+      has_ip=$(ip -n "$NS" -4 -br addr show dev "$xfrmif" 2>/dev/null | awk '{print $3}' || true)
+      if [[ -z $has_ip ]]; then
+        echo "aviso: túnel IPsec sin IP asignada (cierre remoto), reiniciando..."
+        die "túnel IPsec desconectado"
+      fi
+    fi
+  done
+}
+
+# ---------------- WireGuard ----------------
+wgval(){ # wgval <clave> <archivo> -> valores (separados por espacio) de esa clave en el .conf
+  awk -F'=' -v k="$1" '{ key=$1; gsub(/[ \t]/,"",key) }
+    tolower(key)==tolower(k) { sub(/^[^=]*=/,""); gsub(/[ \t]/,""); gsub(/,/," "); print }' "$2" | xargs
+}
+
+run_wireguard(){
+  local wgf="$ETC/secrets/$C.wg"
+  [[ -f $wgf ]] || die "falta el .conf de WireGuard: $wgf (cargarlo desde el panel)"
+  local IF="wg$ID" x="ip netns exec $NS"
+  local addrs allowed mtu
+  addrs=$(wgval Address "$wgf"); allowed=$(wgval AllowedIPs "$wgf"); mtu=$(wgval MTU "$wgf")
+  [[ -n $addrs ]] || die "$wgf no tiene Address"
+
+  $x ip link del "$IF" 2>/dev/null || true
+  $x ip link add "$IF" type wireguard
+  trap '$x ip link del "$IF" 2>/dev/null || true' EXIT
+  # wg setconf no entiende las claves propias de wg-quick
+  $x wg setconf "$IF" <(grep -viE '^[[:space:]]*(Address|DNS|MTU|Table|PreUp|PostUp|PreDown|PostDown|SaveConfig)[[:space:]]*=' "$wgf")
+  for a in $addrs; do [[ $a == *:* ]] || $x ip addr add "$a" dev "$IF"; done
+  $x ip link set "$IF" mtu "${mtu:-1420}" up
+  # keepalive en todos los peers: el túnel queda vivo aunque no haya tráfico
+  for pk in $($x wg show "$IF" peers); do $x wg set "$IF" peer "$pk" persistent-keepalive 25; done
+
+  for n in $allowed; do
+    [[ $n == *:* ]] && continue
+    if [[ $n == 0.0.0.0/0 ]]; then
+      # túnel completo: el endpoint sigue saliendo por el hub
+      for ep in $($x wg show "$IF" endpoints | awk '{split($2,a,":"); print a[1]}'); do
+        $x ip route replace "$ep/32" via "$HUB_IP" dev "$VN"
+      done
+      $x ip route replace 0.0.0.0/1 dev "$IF"; $x ip route replace 128.0.0.0/1 dev "$IF"
+    else
+      $x ip route replace "$n" dev "$IF"
+    fi
+  done
+  echo "WireGuard $IF arriba en $NS (redes: $allowed)"
+  sync_nets
+
+  # supervisión activa: re-resolver DNS si no hay handshake en 75s, y reiniciar si pasa de 150s
+  local inicio; inicio=$(date +%s)
+  while sleep 15; do
+    $x ip link show "$IF" &>/dev/null || die "interfaz $IF desapareció"
+    local hs; hs=$($x wg show "$IF" latest-handshakes | awk '{print $2}' | sort -n | tail -1)
+    local ref=${hs:-0}; (( ref == 0 )) && ref=$inicio
+    local age=$(( $(date +%s) - ref ))
+    if (( age > 75 )); then
+      # re-resolver endpoint si el handshake se demora (IP dinámica / DDNS MikroTik)
+      while read -r pk ep; do
+        [[ -z $pk || -z $ep ]] && continue
+        $x wg set "$IF" peer "$pk" endpoint "$ep" 2>/dev/null || true
+        if [[ $allowed == *"0.0.0.0/0"* ]]; then
+          for ep_ip in $($x wg show "$IF" endpoints | awk -v p="$pk" '$1==p {split($2,a,":"); print a[1]}'); do
+            [[ -n $ep_ip ]] && $x ip route replace "$ep_ip/32" via "$HUB_IP" dev "$VN" 2>/dev/null || true
+          done
+        fi
+      done < <(awk -F'=' '
+        BEGIN { pk=""; ep="" }
+        /^\[Peer\]/ { if (pk && ep) print pk, ep; pk=""; ep="" }
+        tolower($1) ~ /^[[:space:]]*publickey[[:space:]]*$/ { pk=$2; gsub(/[ \t]/, "", pk) }
+        tolower($1) ~ /^[[:space:]]*endpoint[[:space:]]*$/ { ep=$2; gsub(/[ \t]/, "", ep) }
+        END { if (pk && ep) print pk, ep }
+      ' "$wgf")
+    fi
+    (( age > 150 )) && die "sin handshake hace más de 150 s (reiniciando para restablecer conexión)"
+  done
+}
+
+# ---------------- L2TP/IPsec (PSK + MS-CHAPv2) ----------------
+pppq(){ local s=${1//\\/\\\\}; printf '"%s"' "${s//\"/\\\"}"; }   # comillas para opciones de pppd
+
+run_l2tp(){
+  load_secrets VPN_USER VPN_PASS VPN_PSK
+  local E="/etc/netns/$NS" x="ip netns exec $NS"
+  local vici="unix://$RUN/$C.vici" ctl="$RUN/$C.l2tp-control" pppif="ppp$ID"
+  install -d -m 700 "$RUN" "$E/swanctl" "$E/xl2tpd" "$E/ppp"
+  rm -f "$RUN/$C.vici" "$ctl"
+
+  # strongSwan propio del namespace (ip netns exec monta $E/* sobre /etc/*)
+  cat > "$E/strongswan.conf" <<EOF
+charon {
+  load_modular = yes
+  install_routes = no
+  install_virtual_ip = no
+  plugins {
+    include /etc/strongswan.d/charon/*.conf
+    vici { socket = $vici }
+  }
+}
+include /etc/strongswan.d/*.conf
+EOF
+  local psk_hex; psk_hex=$(printf '%s' "$VPN_PSK" | od -An -tx1 | tr -d ' \n')
+  ( umask 077; cat > "$E/swanctl/swanctl.conf" <<EOF
+connections {
+  l2tp {
+    version = 1
+    remote_addrs = $SERVER
+    proposals = aes256-sha256-modp2048,aes256-sha1-modp2048,aes128-sha1-modp2048,aes256-sha1-modp1024,aes128-sha1-modp1024,3des-sha1-modp1024
+    dpd_delay = 30s
+    local { auth = psk }
+    remote { auth = psk }
+    children {
+      l2tp {
+        mode = transport
+        local_ts = dynamic[udp/1701]
+        remote_ts = dynamic[udp/1701]
+        esp_proposals = aes256-sha1,aes128-sha1,aes256-sha256,3des-sha1
+      }
+    }
+  }
+}
+secrets {
+  ike-l2tp { secret = 0x$psk_hex }
+}
+EOF
+  cat > "$E/xl2tpd/xl2tpd.conf" <<EOF
+[lac vpn]
+lns = $SERVER
+pppoptfile = /etc/ppp/options.l2tpd.client
+length bit = yes
+redial = no
+EOF
+  cat > "$E/ppp/options.l2tpd.client" <<EOF
+ipcp-accept-local
+ipcp-accept-remote
+noauth
+refuse-eap
+refuse-pap
+refuse-chap
+refuse-mschap
+noccp
+nodefaultroute
+noipdefault
+mtu 1400
+mru 1400
+connect-delay 5000
+ifname $pppif
+name $(pppq "$VPN_USER")
+password $(pppq "$VPN_PASS")
+EOF
+  )
+
+  local charon_pid xl2tpd_pid
+  $x /usr/sbin/charon-systemd & charon_pid=$!
+  trap 'kill $xl2tpd_pid $charon_pid 2>/dev/null || true' EXIT
+  for _ in $(seq 1 20); do [[ -S $RUN/$C.vici ]] && break; sleep 0.5; done
+  [[ -S $RUN/$C.vici ]] || die "charon no arrancó"
+  $x swanctl --load-all --uri "$vici" --file /etc/swanctl/swanctl.conf >/dev/null
+  $x swanctl --initiate --child l2tp --uri "$vici" --timeout 25 || die "IPsec no negoció (PSK o propuestas)"
+
+  $x xl2tpd -D -c /etc/xl2tpd/xl2tpd.conf -C "$ctl" -p "$RUN/$C.xl2tpd.pid" & xl2tpd_pid=$!
+  for _ in $(seq 1 20); do [[ -p $ctl ]] && break; sleep 0.5; done
+  [[ -p $ctl ]] || die "xl2tpd no arrancó"
+  echo "c vpn" > "$ctl"
+  for _ in $(seq 1 30); do $x ip -4 addr show "$pppif" 2>/dev/null | grep -q inet && break; sleep 1; done
+  $x ip -4 addr show "$pppif" 2>/dev/null | grep -q inet || die "PPP no levantó (usuario/contraseña)"
+  echo "L2TP $pppif arriba en $NS: $($x ip -4 -br addr show "$pppif" | awk '{print $3}')"
+  sync_nets
+
+  while sleep 15; do
+    kill -0 "$charon_pid" 2>/dev/null || die "charon terminó"
+    kill -0 "$xl2tpd_pid" 2>/dev/null || die "xl2tpd terminó"
+    $x ip link show "$pppif" &>/dev/null || die "PPP cayó"
+  done
+}
+
+# ---------------- OpenVPN ----------------
+run_openvpn(){
+  local ovpn="$ETC/secrets/$C.ovpn"
+  [[ -f $ovpn ]] || die "falta el .ovpn: $ovpn (importarlo desde el panel)"
+  local args=(--config "$ovpn" --dev "tun$ID" --dev-type tun --auth-nocache --script-security 1
+              --pull-filter ignore dhcp-option --pull-filter ignore block-outside-dns
+              --data-ciphers "AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-256-CBC:AES-128-CBC"
+              --connect-retry-max 3 --ping 10 --ping-restart 60)
+  install -d -m 700 "$RUN"
+  VPN_USER="" VPN_PASS="" VPN_KEYPASS=""
+  # shellcheck disable=SC1090
+  [[ -f $ETC/secrets/$C.env ]] && source "$ETC/secrets/$C.env"
+  if grep -qE '^[[:space:]]*auth-user-pass' "$ovpn"; then
+    [[ -n $VPN_USER && -n $VPN_PASS ]] || die "el .ovpn pide usuario/contraseña: cargarlos desde el panel"
+    ( umask 077; printf '%s\n%s\n' "$VPN_USER" "$VPN_PASS" > "$RUN/$C.ovpn-auth" )
+    args+=(--auth-user-pass "$RUN/$C.ovpn-auth")
+  fi
+  if awk '/<key>/,/<\/key>/' "$ovpn" | grep -q ENCRYPTED; then
+    [[ -n $VPN_KEYPASS ]] || die "la clave privada está cifrada: cargar su contraseña desde el panel"
+    ( umask 077; printf '%s\n' "$VPN_KEYPASS" > "$RUN/$C.ovpn-keypass" )
+    args+=(--askpass "$RUN/$C.ovpn-keypass")
+  fi
+  ( for _ in 1 2 3 4 5 6; do sleep 10; "$HUBNETS" sync "$C" >/dev/null 2>&1 || true; done ) &
+  # cd al directorio de secretos por si el .ovpn referencia ca/cert/key relativos
+  cd "$ETC/secrets"
+  exec ip netns exec "$NS" openvpn "${args[@]}" $EXTRA_ARGS
+}
+
+# ---------------- Cisco AnyConnect (openconnect) ----------------
+run_anyconnect(){
+  load_secrets VPN_USER VPN_PASS
+  local cookie="" args=(--protocol=anyconnect --non-inter
+                     --interface "tun$ID" --script /usr/share/vpnc-scripts/vpnc-script --reconnect-timeout 60)
+  if [[ -n $TRUSTED_CERT ]]; then
+    if [[ $TRUSTED_CERT == *":"* ]]; then
+      args+=(--servercert "$TRUSTED_CERT")
+    else
+      args+=(--servercert "sha256:$TRUSTED_CERT")
+    fi
+  fi
+  [[ -n ${AUTHGROUP:-} ]] && args+=(--authgroup "$AUTHGROUP")
+
+  # Si existe el asistente SAML, intentar autenticar con Duo SSO
+  local saml_helper="/usr/local/sbin/vpnhub-saml-auth"
+  if [[ -x $saml_helper ]]; then
+    local cfile="$RUN/$C.cookie"
+    if [[ -s $cfile ]]; then
+      cookie=$(<"$cfile")
+    fi
+    if [[ -z $cookie ]]; then
+      echo "Iniciando autenticación SAML / Cisco Duo Push para $C..."
+      cookie=$("$saml_helper" "$C" 2>&1)
+      local rc=$?
+      if [[ $rc -ne 0 ]]; then
+        echo "$cookie" >&2
+        if [[ $cookie == *"esperando aprobación"* || $cookie == *"No se encontró la cookie"* ]]; then
+          systemctl stop "vpnhub@$C" 2>/dev/null || true
+          die "Autenticación SAML / Duo Push cancelada o no aprobada"
+        fi
+        cookie=""
+      else
+        cookie=$(tail -n 1 <<< "$cookie")
+      fi
+    fi
+  fi
+
+  ( for _ in 1 2 3 4 5 6; do sleep 10; "$HUBNETS" sync "$C" >/dev/null 2>&1 || true; done ) &
+  local srv="$SERVER"; [[ -n $PORT && $PORT != 443 ]] && srv="$SERVER:$PORT"
+
+  if [[ -n $cookie && ${#cookie} -ge 20 ]]; then
+    echo "Conectando túnel con cookie de sesión SAML validada..."
+    # Ejecutar openconnect; al salir (por desconexión o sesión expirada), limpiar la cookie
+    ip netns exec "$NS" /usr/sbin/openconnect "${args[@]}" --cookie-on-stdin "$srv" <<< "$cookie"
+    local ec=$?
+    rm -f "$RUN/$C.cookie"
+    exit $ec
+  fi
+
+  # Fallback: autenticación directa por stdin
+  local otp=""
+  if [[ ${OTP_REQUIRED:-0} == 1 ]]; then
+    install -d -m 700 "$RUN"; touch "$RUN/$C.otp-wait"; echo "esperando código OTP (panel web)"
+    local t=0
+    while [[ ! -s $RUN/$C.otp && $t -lt 30 ]]; do sleep 1; ((t++)); done
+    if [[ -s $RUN/$C.otp ]]; then
+      otp=$(<"$RUN/$C.otp")
+    fi
+    rm -f "$RUN/$C.otp" "$RUN/$C.otp-wait"
+  fi
+  args+=(--user "$VPN_USER" --passwd-on-stdin)
+  local second="${otp:-push}"
+  exec ip netns exec "$NS" /usr/sbin/openconnect "${args[@]}" "$srv" < <(printf '%s\n%s\n' "$VPN_PASS" "$second")
+}
+
+cmd_run(){
+  load "$1"; [[ "${DISABLED:-0}" == "1" ]] && die "la VPN '$1' está deshabilitada administrativamente (DISABLED=1)"
+  net_up; sync_nets
+  case "$TYPE" in
+    forti)       run_forti ;;
+    forti_ipsec) run_forti_ipsec ;;
+    wireguard)   run_wireguard ;;
+    l2tp)        run_l2tp ;;
+    openvpn)     run_openvpn ;;
+    anyconnect)  run_anyconnect ;;
+    *) die "tipo '$TYPE' no soportado (forti, forti_ipsec, anyconnect, openvpn, wireguard, l2tp)";;
+  esac
+}
+
+cmd_cert(){
+  load "$1"
+  local d
+  d=$(openssl s_client -connect "$SERVER:${PORT:-443}" -servername "$SERVER" </dev/null 2>/dev/null \
+      | openssl x509 -outform der 2>/dev/null | sha256sum | awk '{print $1}')
+  [[ $d != e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ]] || die "no pude leer el certificado de $SERVER:$PORT"
+  openssl s_client -connect "$SERVER:${PORT:-443}" -servername "$SERVER" </dev/null 2>/dev/null \
+      | openssl x509 -noout -subject -issuer -enddate 2>/dev/null || true
+  echo "TRUSTED_CERT=$d"
+}
+
+cmd_status(){
+  printf "%-14s %-4s %-10s %-10s %-18s %-7s %s\n" CLIENTE ID TIPO SERVICIO "IP TUNEL" REDES CHECK
+  for f in "$ETC"/clientes/*.conf; do
+    [[ -e $f ]] || continue
+    local c; c=$(basename "$f" .conf); load "$c"
+    local svc tip chk="-"
+    svc=$(systemctl is-active "vpnhub@$c" 2>/dev/null || true)
+    tip=$(ip -n "$NS" -4 -br addr 2>/dev/null | awk '$1 ~ /^(ppp|tun|wg|ipsec)/{print $3; exit}' || true)
+    if [[ -n $CHECK_IP ]] && ip netns list | grep -qw "$NS"; then
+      ip netns exec "$NS" ping -c1 -W2 "$CHECK_IP" &>/dev/null && chk="ok $CHECK_IP" || chk="FALLA $CHECK_IP"
+    fi
+    printf "%-14s %-4s %-10s %-10s %-18s %-7s %s\n" "$c" "$ID" "$TYPE" "$svc" "${tip:--}" "$("$HUBNETS" count "$c")" "$chk"
+  done
+}
+
+case "${1:-}" in
+  run)    cmd_run "${2:?cliente}";;
+  up)     load "${2:?cliente}"; [[ "${DISABLED:-0}" == "1" ]] && die "la VPN '$2' está deshabilitada (DISABLED=1)"; systemctl enable --now "vpnhub@$2";;
+  down)   load "${2:?cliente}"; systemctl disable --now "vpnhub@$2" || true; net_down; "$HUBNETS" sync || true;;
+  status) cmd_status;;
+  cert)   cmd_cert "${2:?cliente}";;
+  routes) load "${2:?cliente}"; ip -n "$NS" route;;
+  maps)   "$HUBNETS" list "${2:?cliente}";;
+  dns)    "$HUBNETS" sync; grep -E "^(host-record|server=/)" /etc/dnsmasq.d/vpnhub.conf || true;;
+  audit)  shift; exec /usr/local/sbin/hubtraffic audit "$@";;
+  live)   shift; exec /usr/local/sbin/hubtraffic live "$@";;
+  *) sed -n '2,17p' "$0"; exit 1;;
+esac

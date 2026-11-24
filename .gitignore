@@ -1,0 +1,34 @@
+# Claves, secretos y credenciales privadas
+/etc/vpnhub/secrets/*
+*.key
+*.pem
+*.pfx
+*.p12
+*.crt
+*.csr
+*.env
+
+# Bases de datos y archivos de estado en vivo
+*.db
+*.sqlite
+*.sqlite3
+/var/log/vpnhub/*
+/run/vpnhub/*
+users.json
+trusted_devices.json
+vpn_usage.json
+lan_devices.json
+rw_peers.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Sistema y logs
+*.log
+*.jsonl
+.DS_Store
+Thumbs.db

@@ -1,0 +1,23 @@
+# Configuración de ejemplo: FortiGate SSL VPN
+# Copiar este archivo a /etc/vpnhub/clientes/<nombre>.conf
+ID=1
+TYPE=forti
+SERVER="vpn.ejemplo.com"
+PORT=443
+TRUSTED_CERT=""
+AUTHGROUP=""
+MAP="10.201.0.0/24=192.168.1.0/24"
+DIRECT=""
+IGNORE=""
+AUTO_MAP="1"
+CHECK_IP="192.168.1.1"
+HOSTS="firewall=192.168.1.1 srv-ad=192.168.1.10"
+DNS_SERVER="192.168.1.10"
+DOMAINS="corp.local"
+OTP_REQUIRED=0
+DESCRIPTION="Cliente Corporativo FortiGate SSL"
+OWNER=""
+CREATED_BY="admin"
+DISABLED=0
+DISABLED_BY=""
+DNS_ALIAS="corp"

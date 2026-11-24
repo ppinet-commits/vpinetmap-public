@@ -1,0 +1,2437 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VPiNetmap · Gateway Multi-VPN</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="alternate icon" href="/favicon.ico">
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --fg:#1b1f24; --muted:#667085; --line:#e4e7ec;
+  --ok:#12805c; --ok-bg:#e7f6ef; --bad:#c4320a; --bad-bg:#fdeee8; --warn:#a15c07; --warn-bg:#fef4e2;
+  --accent:#2453d6; --accent-bg:#eaf0ff; --dyn:#7a3fd1; --dyn-bg:#f3ecff; --code:#f1f3f6; --shadow:0 12px 40px rgba(16,24,40,.18);
+  --vpi-i:#8c96a5;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0f1115; --card:#171a20; --fg:#e6e8eb; --muted:#98a1b0; --line:#262b33;
+    --ok:#4cc38a; --ok-bg:#12261d; --bad:#f07a5a; --bad-bg:#2c1712; --warn:#f0b35a; --warn-bg:#2b2112;
+    --accent:#7aa2ff; --accent-bg:#18213a; --dyn:#b694ff; --dyn-bg:#241a38; --code:#1f232b; --shadow:0 12px 40px rgba(0,0,0,.5);
+    --vpi-i:#cbd5e1; }
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:2;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;font-weight:650}
+header .sum{color:var(--muted);font-size:13px}
+header .sp{flex:1}
+input,select,textarea{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+textarea{font:12px/1.4 ui-monospace,Consolas,monospace;width:100%;min-height:80px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+input.f{width:220px;max-width:40vw}
+main{padding:14px 18px;max-width:1680px;margin:0 auto}
+main.view-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px}
+main.view-list{display:block;max-width:1420px;margin:0 auto;padding:12px 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card-desc{font-size:12px;color:var(--muted);font-style:italic;margin:-6px 0 2px 2px;line-height:1.35;word-break:break-word}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--muted)}
+.dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.warn{background:var(--warn)}
+.name{font-weight:650;font-size:16px}
+.tag{font-size:11px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.badge{font-size:12px;padding:3px 9px;border-radius:999px;font-weight:600}
+.badge.ok{background:var(--ok-bg);color:var(--ok)} .badge.bad{background:var(--bad-bg);color:var(--bad)} .badge.warn{background:var(--warn-bg);color:var(--warn)} .badge.off{background:var(--code);color:var(--muted)}
+.ml{margin-left:auto}
+.gear,.star-btn{border:none;background:none;font-size:18px;line-height:1;padding:4px 6px;color:var(--muted);cursor:pointer;border-radius:6px}
+.gear:hover,.star-btn:hover{background:var(--code);color:var(--fg)}
+.star-btn.fav{color:#f59e0b}
+.star-btn.fav:hover{color:#d97706}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:0;font-size:13px}
+dt{color:var(--muted)} dd{margin:0;overflow-wrap:anywhere}
+code{font:12.5px ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code);padding:1px 5px;border-radius:5px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-weight:500}
+tr.off td{opacity:.55}
+td.act{text-align:right;white-space:nowrap}
+.kind{font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.kind.man{background:var(--accent-bg);color:var(--accent)} .kind.dyn{background:var(--dyn-bg);color:var(--dyn)}
+.st{font-size:11px;padding:1px 7px;border-radius:999px;white-space:nowrap}
+.st.activa{background:var(--ok-bg);color:var(--ok)} .st.desactivada{background:var(--code);color:var(--muted)}
+.st.conflicto{background:var(--bad-bg);color:var(--bad)} .st.warn{background:var(--warn-bg);color:var(--warn)}
+.hint{color:var(--muted);font-size:12px}
+details summary{cursor:pointer;color:var(--muted);font-size:13px;user-select:none}
+details[open] summary{margin-bottom:6px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.hdr-btn{display:inline-flex;align-items:center;justify-content:center;padding:7px 9px;color:var(--fg);line-height:1}
+.hdr-btn:hover{border-color:var(--accent);color:var(--accent)}
+button{border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:6px 12px;border-radius:8px;cursor:pointer;font:inherit;font-size:13px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--bad);border-color:var(--bad)}
+button.mini{padding:2px 8px;font-size:12px}
+button:disabled{opacity:.5;cursor:wait}
+.sw{position:relative;display:inline-block;width:30px;height:17px;vertical-align:middle;cursor:pointer}
+.sw input{opacity:0;width:0;height:0;position:absolute}
+.sw span{position:absolute;inset:0;background:var(--line);border-radius:999px;transition:.15s}
+.sw span:before{content:"";position:absolute;width:13px;height:13px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.15s}
+.sw input:checked+span{background:var(--ok)} .sw input:checked+span:before{transform:translateX(13px)}
+.otp,.miss{display:flex;gap:8px;align-items:center;background:var(--warn-bg);padding:10px;border-radius:8px;flex-wrap:wrap}
+.otp input{flex:1;font:15px ui-monospace,monospace;letter-spacing:.15em}
+.miss{color:var(--warn);font-size:13px}
+pre.log{max-height:280px;overflow:auto;background:var(--code);padding:10px;border-radius:8px;font:11.5px/1.4 ui-monospace,monospace;white-space:pre-wrap;margin:0}
+.copy{cursor:pointer} .copy:hover{text-decoration:underline}
+.addnet{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.addnet input{flex:1;min-width:120px;font-size:12.5px;padding:4px 8px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0f172a;color:#f8fafc;padding:9px 18px;border-radius:8px;font-size:13px;font-weight:500;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99999;max-width:90vw;box-shadow:0 8px 24px rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.1)}
+.toast.show{opacity:1}
+.empty{color:var(--muted);padding:40px;text-align:center;grid-column:1/-1}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--fg);padding:0;width:min(720px,94vw);max-height:90vh;box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(10,12,16,.45)}
+.dh{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:1}
+.dh h2{margin:0;font-size:16px}
+.db{padding:16px 18px;display:flex;flex-direction:column;gap:18px;overflow:auto}
+.df{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--card)}
+fieldset{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+legend{padding:0 6px;font-weight:600;font-size:13px}
+fieldset .full{grid-column:1/-1}
+label.fl{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+label.fl input,label.fl select,label.fl textarea{color:var(--fg);font-size:13.5px}
+label.chk{flex-direction:row;align-items:center;gap:8px;color:var(--fg)}
+.row{display:flex;gap:6px} .row input{flex:1}
+.types{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.types label{border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.types input{display:none}
+.types label:has(input:checked){border-color:var(--accent);background:var(--accent-bg)}
+.types b{font-size:13.5px} .types span{font-size:11.5px;color:var(--muted)}
+.imp-card{border:1.5px dashed var(--dyn);background:var(--dyn-bg);border-radius:10px;padding:10px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.imp-card b{color:var(--dyn)} .imp-card a{font-size:11.5px;color:var(--dyn);margin-top:2px;width:max-content}
+.imp-card:hover,.imp-card:focus-visible{border-style:solid;outline:none}
+.imp{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--code);padding:10px;border-radius:8px}
+.err{color:var(--bad);font-size:13px;white-space:pre-wrap}
+dialog:has([data-user]), dialog:has(#nuBox), dialog:has(#logsTableBox), dialog:has(#trafficBox){width:min(1150px,96vw)}
+dialog:has([name="eu_role"]){width:min(860px,95vw)}
+.traffic-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.traffic-kpi-card{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:3px}
+.traffic-kpi-val{font-size:18px;font-weight:700;color:var(--fg)}
+.traffic-kpi-sub{font-size:11px;color:var(--muted)}
+.traffic-pills{display:inline-flex;gap:4px;background:var(--code);padding:3px;border-radius:6px;border:1px solid var(--line)}
+.traffic-pill{background:transparent;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted);font-weight:500;transition:all .15s}
+.traffic-pill:hover{color:var(--fg)}
+.traffic-pill.active{background:var(--accent);color:#fff}
+.traffic-timeline{position:relative;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px 10px 14px;display:flex;flex-direction:column;gap:8px}
+.traffic-tl-track{position:relative;height:32px;background:rgba(255,255,255,.04);border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.traffic-tl-bar{position:absolute;top:3px;bottom:3px;border-radius:4px;opacity:.9;cursor:pointer;transition:transform .1s, filter .15s;min-width:4px}
+.traffic-tl-bar:hover{filter:brightness(1.2);transform:scaleY(1.1);z-index:10}
+.traffic-tl-hours{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:2px}
+.traffic-bars-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:768px){.traffic-bars-grid{grid-template-columns:1fr}}
+.traffic-bar-row{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:6px}
+.traffic-bar-label{width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.traffic-bar-track{flex:1;height:12px;background:rgba(255,255,255,.05);border-radius:4px;overflow:hidden;position:relative}
+.traffic-bar-fill{height:100%;border-radius:4px;background:var(--accent);transition:width .3s}
+.traffic-bar-val{font-size:11px;color:var(--muted);width:75px;text-align:right;white-space:nowrap}
+.vpn-access-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px 10px;padding:10px;background:var(--code);border-radius:8px;max-height:240px;overflow-y:auto}
+.vpn-access-item{display:flex;align-items:center;gap:8px;font-size:12.5px;min-width:0;padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.02);border:1px solid transparent;cursor:pointer;transition:all .15s;user-select:none}
+.vpn-access-item:hover{background:rgba(255,255,255,.05);border-color:var(--line)}
+.vpn-access-item:has(input:checked){background:var(--accent-bg);border-color:var(--accent)}
+.vpn-access-item input[type="checkbox"]{flex-shrink:0;margin:0;cursor:pointer}
+.vpn-access-item .vpn-access-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.btn-wg-dl{display:inline-flex;align-items:center;justify-content:center;gap:4px;background:rgba(136,23,26,.08);border:1px solid rgba(136,23,26,.3);color:#88171a;padding:2px 6px;border-radius:6px;text-decoration:none;vertical-align:middle;line-height:1;transition:all .15s ease;flex:none;cursor:pointer}
+.btn-wg-dl:hover{background:#88171a;border-color:#88171a;color:#fff}
+.btn-wg-dl:hover svg{fill:#fff}
+.view-toggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}
+.view-btn{border:none;background:transparent;color:var(--muted);padding:6px 10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;border-radius:0;transition:background .15s,color .15s}
+.view-btn:hover{color:var(--fg);background:var(--code)}
+.view-btn.active{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.vpn-table-wrap{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow-x:auto;box-shadow:var(--shadow)}
+.vpn-table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+.vpn-table .list-desc{margin:1px 0 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(180px,16vw);font-size:11px}
+.vpn-table th{background:var(--code);color:var(--muted);font-weight:600;font-size:11px;padding:6px 6px;border-bottom:1px solid var(--line);user-select:none;cursor:pointer;position:sticky;top:0;z-index:1;text-align:left}
+.vpn-table th:hover{color:var(--fg);background:rgba(255,255,255,.05)}
+.vpn-table th.sort-active{color:var(--accent)}
+.vpn-table td{padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+.vpn-table tbody tr.row-vpn:hover td{background:rgba(255,255,255,.025)}
+.vpn-table tbody tr.row-vpn.sub-open td{background:rgba(122,162,255,.04)}
+.vpn-table .col-fav{width:1%;min-width:22px;text-align:center;padding:3px 2px}
+.vpn-table .col-fav .star-btn{padding:1px;font-size:14px}
+.vpn-table .col-st{width:1%;min-width:78px;white-space:nowrap;padding:4px 5px}
+.vpn-table .col-name b{font-size:13.5px}
+.vpn-table .col-type{width:1%;min-width:65px;white-space:nowrap;padding:4px 5px}
+.vpn-table .col-server{max-width:min(160px,15vw);padding:4px 5px}
+.vpn-table .col-server-text{display:inline-block;max-width:min(150px,14vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-size:11.5px}
+.vpn-table .col-ip{width:1%;min-width:115px;white-space:nowrap;padding:4px 5px}
+.vpn-table .col-check{width:1%;min-width:75px;white-space:nowrap;font-size:11px;padding:4px 5px}
+.vpn-table .col-nets{width:1%;min-width:88px;white-space:nowrap;padding:4px 5px}
+.vpn-table .col-act{width:1%;min-width:140px;white-space:nowrap;text-align:right;position:sticky;right:0;z-index:2;background:var(--card);box-shadow:-3px 0 6px rgba(0,0,0,.08);padding:4px 6px}
+.vpn-table th.col-act{background:var(--code);z-index:3;box-shadow:-3px 0 6px rgba(0,0,0,.08)}
+.vpn-table tbody tr.row-vpn:hover td.col-act{background:var(--card);filter:brightness(1.06)}
+.vpn-table tbody tr.row-vpn.sub-open td.col-act{background:rgba(122,162,255,.04)}
+.sub-row td{padding:10px 14px;background:var(--bg) !important;white-space:normal}
+.sub-content{display:flex;flex-direction:column;gap:10px;max-width:1100px}
+
+.sub-toggle-btn{background:var(--code);border:1px solid var(--line);font-size:10.5px;height:23px;padding:0 5px;border-radius:5px;cursor:pointer;color:var(--fg);display:inline-flex;align-items:center;justify-content:space-between;width:88px;box-sizing:border-box;transition:border-color .15s}
+.sub-toggle-btn:hover{border-color:var(--accent);color:var(--accent)}
+.sub-toggle-btn.active{background:var(--accent-bg);color:var(--accent);border-color:var(--accent)}
+
+.vpn-act-group{display:inline-flex;align-items:center;justify-content:flex-end;gap:4px;flex-wrap:nowrap;white-space:nowrap}
+.vpn-act-group button.mini{height:23px;padding:0 6px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:5px;flex:none}
+.vpn-act-group .gear{width:23px;height:23px;display:inline-flex;align-items:center;justify-content:center;padding:0;font-size:12px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--muted);cursor:pointer;flex:none;box-sizing:border-box}
+.vpn-act-group .gear:hover{border-color:var(--accent);color:var(--fg);background:var(--code)}
+.vpn-act-box{display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px}
+.vpn-act-user{font-size:10px;color:var(--muted);font-style:italic;line-height:1.15;text-align:right;white-space:nowrap;max-width:145px;overflow:hidden;text-overflow:ellipsis}
+.vpn-act-user b{font-weight:600;font-style:normal;color:var(--fg);opacity:.9}
+.card-act-user{font-size:11px;color:var(--muted);font-style:italic;margin-top:-6px;text-align:right;line-height:1.2}
+.card-act-user b{font-weight:600;font-style:normal;color:var(--fg);opacity:.9}
+  /* Responsividad móvil y pantallas táctiles */
+  @media (max-width: 640px) {
+    header { padding: 8px 12px; gap: 8px; }
+    header h1 { font-size: 15px; }
+    header .sum { font-size: 11px; }
+    header .sp { min-width: 0; }
+    input.f { width: 100% !important; max-width: 100% !important; order: 10; margin-top: 2px; font-size: 13.5px; }
+    #scopeFilter { font-size: 12.5px; padding: 5px 8px; }
+    #btnNew { padding: 6px 10px; font-size: 12.5px; font-weight: 600; }
+    #btnTraffic, #btnUsers, #btnLogs { font-size: 14px; padding: 5px 8px; }
+    #btnMe { font-size: 12px; padding: 4px 8px; }
+    #btnLogout { font-size: 12px; padding: 5px 8px; }
+    #conflictsBox { margin: 0 12px 10px 12px !important; }
+
+    main.view-cards { padding: 8px 10px !important; grid-template-columns: 1fr !important; gap: 12px !important; }
+    .card { padding: 12px 14px !important; border-radius: 10px !important; }
+    .card .top { gap: 6px; }
+    .card .btns { gap: 6px; }
+    .card .btns button { flex: 1 1 calc(50% - 6px); min-height: 38px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
+    .card .btns button.mini { flex: 1 1 auto; min-height: 30px; font-size: 11.5px; }
+    .card .btns button.danger { flex: 1 1 100%; }
+
+    main.view-list { padding: 6px 8px !important; }
+    .vpn-table-wrap { -webkit-overflow-scrolling: touch; border-radius: 8px; }
+
+    dialog, dialog:has([data-user]), dialog:has(#nuBox), dialog:has(#logsTableBox), dialog:has(#trafficBox), dialog:has([name="eu_role"]) {
+      width: 95vw !important; max-width: 95vw !important; max-height: 94vh !important; border-radius: 12px !important; margin: auto !important;
+    }
+    .dh { padding: 10px 14px !important; }
+    .dh h2 { font-size: 15px !important; }
+    .db { padding: 12px 14px !important; gap: 12px !important; }
+    .df { padding: 10px 14px !important; gap: 8px !important; flex-wrap: wrap !important; }
+    .df button { flex: 1 1 calc(50% - 6px) !important; min-height: 38px !important; }
+
+    fieldset { grid-template-columns: 1fr !important; padding: 10px 12px !important; gap: 10px !important; }
+    fieldset .full { grid-column: auto !important; }
+    .types { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important; gap: 6px !important; }
+    .types label { padding: 8px !important; }
+    .types b { font-size: 12.5px !important; }
+
+    .cred-row { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+    .cred-row label.fl { min-width: 100% !important; width: 100% !important; }
+    .cred-row label.chk { margin-top: 4px !important; margin-bottom: 0 !important; }
+
+    #trafficBox .traffic-top-row { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+    #trafficBox .traffic-pills { display: flex !important; width: 100% !important; }
+    #trafficBox .traffic-pill { flex: 1 1 auto !important; text-align: center !important; padding: 6px 4px !important; font-size: 11.5px !important; }
+    #trafficBox .traffic-filters { width: 100% !important; flex-direction: column !important; align-items: stretch !important; gap: 8px !important; }
+    #trafficBox #trCustomDate, #trafficBox #trVpnFilter, #trafficBox #trUserFilter, #trafficBox #trSearch { width: 100% !important; min-width: 0 !important; font-size: 13px !important; padding: 6px 10px !important; }
+    #trafficBox .traffic-action-btns { width: 100% !important; display: flex !important; gap: 6px !important; flex-wrap: wrap !important; }
+    #trafficBox .traffic-action-btns button { flex: 1 1 auto !important; text-align: center !important; padding: 6px 6px !important; font-size: 11.5px !important; }
+    .traffic-kpi-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+    .traffic-kpi-card { padding: 10px 12px !important; }
+    .traffic-kpi-val { font-size: 16px !important; }
+    .traffic-bars-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+    #trafficBox .tr-table-wrap { overflow: auto !important; -webkit-overflow-scrolling: touch !important; max-height: 320px !important; }
+
+    .toast { max-width: 92vw; font-size: 12.5px; padding: 8px 14px; bottom: 16px; }
+  }
+
+  @media (max-width: 420px) {
+    header .sum { display: none; }
+    #btnNew { font-size: 12px; }
+    #btnLogout { padding: 5px 7px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="/emblem.png" alt="VPiNetmap" style="height:35px;width:auto;flex:none;display:block">
+  <h1 style="letter-spacing:-0.02em;font-size:19px;display:inline-flex;align-items:center;margin:0;font-weight:700">
+    <span style="color:#00c0f0">VP</span><span style="color:var(--vpi-i,#8c96a5)">i</span><span style="color:#00c0f0">N</span><span style="color:var(--fg);font-weight:550">etmap</span>
+  </h1><span class="sum" id="sum">cargando…</span>
+  <span class="sp"></span>
+  <input class="f" id="filter" placeholder="Buscar cliente, IP o nombre…" autocomplete="off">
+  <select id="scopeFilter" title="Filtrar"><option value="">Todas</option><option value="general">Generales</option><option value="personal">Privadas</option></select>
+  <div class="view-toggle" title="Modo de vista">
+    <button type="button" id="btnViewCards" class="view-btn" title="Vista en tarjetas (cuadrícula)">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" style="display:block"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm-8 8A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z"/></svg>
+    </button>
+    <button type="button" id="btnViewList" class="view-btn" title="Vista en lista detallada (tipo Explorador)">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" style="display:block"><path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z"/></svg>
+    </button>
+  </div>
+  <button class="primary" id="btnNew">+ Nueva VPN</button>
+  <button type="button" id="btnTraffic" class="hdr-btn" hidden title="Tráfico y estadísticas">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">
+      <line x1="18" y1="20" x2="18" y2="10"/>
+      <line x1="12" y1="20" x2="12" y2="4"/>
+      <line x1="6" y1="20" x2="6" y2="14"/>
+    </svg>
+  </button>
+  <button type="button" id="btnUsers" class="hdr-btn" hidden title="Gestión de usuarios y accesos">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+  </button>
+  <button type="button" id="btnLogs" class="hdr-btn" hidden title="Logs de auditoría del sistema">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+      <line x1="10" y1="9" x2="8" y2="9"/>
+    </svg>
+  </button>
+  <button type="button" id="btnMe" class="tag" style="padding:5px 10px">…</button>
+  <button type="button" id="btnLogout" title="Cerrar sesión para entrar con otro usuario">Cerrar sesión</button>
+</header>
+<div id="conflictsBox" style="margin:0 24px 12px 24px" hidden></div>
+<main id="grid"></main>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm" autocomplete="off">
+  <div class="dh"><h2 id="dlgTitle"></h2><span class="sp" style="flex:1"></span><div id="dlgHeaderExtra"></div><button type="button" class="gear" data-close aria-label="Cerrar">✕</button></div>
+  <div class="db" id="dlgBody"></div>
+  <div class="df" id="dlgFoot"></div>
+  <div class="toast" id="dlgToast"></div>
+</form></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let data = [], META = null, ME = {name:"", role:""}, openState = {}, busy = {},
+    viewMode = localStorage.getItem("vpnhub_view") || "cards", sortField = "name", sortOrder = "asc";
+
+function toast(msg){
+  const t = (dlg && dlg.open) ? ($("#dlgToast") || $("#toast")) : $("#toast");
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove("show"), 2800);
+}
+function copy(txt){ navigator.clipboard?.writeText(txt).then(()=>toast("Copiado: "+txt)); }
+async function api(path, opts={}){
+  const r = await fetch(path, {...opts, headers:{"X-Requested-With":"vpnhub","Content-Type":"application/json"}});
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok || j.ok === false) throw new Error(j.error || ("HTTP "+r.status));
+  return j;
+}
+const post = (path, body) => api(path, {method:"POST", body: JSON.stringify(body||{})});
+
+async function downloadWgProfile(url, fallbackName = "wireguard.conf") {
+  try {
+    toast("Descargando perfil WireGuard…");
+    const r = await fetch(url, { headers: { "X-Requested-With": "vpnhub" } });
+    if (!r.ok) {
+      let msg = "Error al descargar perfil (HTTP " + r.status + ")";
+      try { const j = await r.json(); if (j.error) msg = j.error; } catch(e){}
+      return toast(msg);
+    }
+    const text = await r.text();
+    let filename = fallbackName;
+    const cd = r.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="?([^";]+)"?/i);
+    if (m && m[1]) filename = m[1].trim();
+
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = u;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(u), 2000);
+    toast("Perfil descargado: " + filename);
+  } catch (err) {
+    toast("Error de descarga: " + err.message);
+  }
+}
+
+/* ---------------- tarjetas ---------------- */
+function health(c){
+  if (c.disabled) return ["off", c.disabled_by_admin ? "Deshabilitada por admin" : "Deshabilitada"];
+  if (c.waiting_otp) return ["warn","Esperando OTP"];
+  if (c.service !== "active") return c.enabled ? ["bad","Caído"] : ["off","Apagado"];
+  if (!c.tunnel_ip) return ["warn","Conectando…"];
+  if (c.check_ok === false) return ["bad","Sin respuesta"];
+  if (c.type === "wireguard" && c.handshake_age == null) return ["warn","Sin handshake"];
+  if (c.type === "wireguard" && c.handshake_age >= 180) return ["warn","Inactivo"];
+  return ["ok","Conectado"];
+}
+function ago(s){ if(s==null) return "—"; if(s<60) return s+" s"; if(s<3600) return Math.floor(s/60)+" min"; return Math.floor(s/3600)+" h"; }
+function since(ts){ if(!ts) return "—"; const d=new Date(ts.replace(/ [A-Z]+$/,"")); return isNaN(d)?ts:d.toLocaleString("es-AR",{dateStyle:"short",timeStyle:"short"}); }
+function fmtBytes(b){
+  if (b == null) return "—";
+  if (b === 0) return "0 B";
+  const k = 1024, sizes = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const i = Math.floor(Math.log(b) / Math.log(k));
+  return parseFloat((b / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+function formatHandshake(c){
+  if (c.service !== "active") return "—";
+  if (c.handshake_age == null) return `<span style="color:var(--bad)">sin respuesta</span>`;
+  if (c.handshake_age < 180) return `<span style="color:var(--ok)">hace ${ago(c.handshake_age)}</span>`;
+  return `<span style="color:var(--warn)">hace ${ago(c.handshake_age)} (inactivo)</span>`;
+}
+function formatTransfer(c){
+  if (c.service !== "active" || (c.transfer_rx == null && c.transfer_tx == null)) return "";
+  const rx = fmtBytes(c.transfer_rx || 0);
+  const tx = fmtBytes(c.transfer_tx || 0);
+  const rxColor = (c.transfer_rx > 0) ? "var(--ok)" : "var(--muted)";
+  return `<span><span title="Enviados / Upload" style="color:var(--accent)">↑ ${tx}</span> <span class="hint">·</span> <span title="Recibidos / Download" style="color:${rxColor}">↓ ${rx}</span></span>`;
+}
+function formatListUserHint(c){
+  const isAct = c.service === "active";
+  const mr = c.can_edit ? "27px" : "0";
+  if (isAct) {
+    const u = c.connected_by || c.last_user;
+    if (!u) return "";
+    const agoText = c.connected_at ? ` · hace ${ago(Math.max(0, Math.floor(Date.now()/1000 - c.connected_at)))}` : "";
+    const fullDate = c.connected_at ? new Date(c.connected_at * 1000).toLocaleString("es-AR") : "";
+    const title = `Conectada por ${esc(u)}${agoText}${fullDate ? ' (' + fullDate + ')' : ''}`;
+    return `<div class="vpn-act-user" style="margin-right:${mr}" title="${title}">Conectó: <b>${esc(u)}</b></div>`;
+  } else {
+    const u = c.last_user;
+    if (!u) return "";
+    const agoText = c.last_at ? ` · hace ${ago(Math.max(0, Math.floor(Date.now()/1000 - c.last_at)))}` : "";
+    const fullDate = c.last_at ? new Date(c.last_at * 1000).toLocaleString("es-AR") : "";
+    const title = `Último uso por ${esc(u)}${agoText}${fullDate ? ' (' + fullDate + ')' : ''}`;
+    return `<div class="vpn-act-user" style="margin-right:${mr}" title="${title}">Último: <b>${esc(u)}</b></div>`;
+  }
+}
+function formatCardUserHint(c){
+  const isAct = c.service === "active";
+  if (isAct) {
+    const u = c.connected_by || c.last_user;
+    if (!u) return "";
+    const agoText = c.connected_at ? ` · hace ${ago(Math.max(0, Math.floor(Date.now()/1000 - c.connected_at)))}` : "";
+    const fullDate = c.connected_at ? new Date(c.connected_at * 1000).toLocaleString("es-AR") : "";
+    return `<div class="card-act-user" title="Conectada por ${esc(u)}${fullDate ? ' (' + fullDate + ')' : ''}">Conectada por <b>${esc(u)}</b>${agoText}</div>`;
+  } else {
+    const u = c.last_user;
+    if (!u) return "";
+    const agoText = c.last_at ? ` · hace ${ago(Math.max(0, Math.floor(Date.now()/1000 - c.last_at)))}` : "";
+    const fullDate = c.last_at ? new Date(c.last_at * 1000).toLocaleString("es-AR") : "";
+    return `<div class="card-act-user" title="Último uso por ${esc(u)}${fullDate ? ' (' + fullDate + ')' : ''}">Último uso: <b>${esc(u)}</b>${agoText}</div>`;
+  }
+}
+const stCls = s => ({activa:"activa",desactivada:"desactivada",conflicto:"conflicto"}[s] || "warn");
+
+function netsTable(c){
+  const ed = c.can_edit !== false;
+  const rows = c.nets.map(n=>{
+    const man = n.origin==="manual";
+    const on = n.enabled !== false;
+    const toggle = (n.direct || !ed) ? "" :`<label class="sw" title="${on?"Desactivar":"Activar"}"><input type="checkbox" data-net="${on?"off":"on"}" data-real="${esc(n.real)}" ${on?"checked":""}><span></span></label>`;
+    const del = man && !n.direct && ed ? `<button type="button" class="mini danger" data-net="del" data-real="${esc(n.real)}" title="Borrar red manual">✕</button>` : "";
+    const pushed = man && n.pushed ? ` <span class="hint" title="La VPN también la anuncia">⇄</span>` : (!n.pushed && !man ? ` <span class="hint" title="La VPN no la anuncia ahora">⌀</span>` : "");
+    return `<tr class="${on?"":"off"}" title="${esc(n.note||"")}">
+      <td><span class="kind ${man?"man":"dyn"}">${man?"MANUAL":"DINÁMICA"}</span></td>
+      <td>${esc(n.real)}${pushed}</td>
+      <td>${n.virtual?`<code class="copy" data-copy="${esc(n.virtual)}">${esc(n.virtual)}</code>`:"—"}</td>
+      <td><span class="st ${stCls(n.state)}">${esc(n.state)}</span></td>
+      <td class="act">${toggle} ${del}</td></tr>`;
+  }).join("");
+  const table = `<table><tr><th></th><th>Red real</th><th>Desde la LAN</th><th>Estado</th><th></th></tr>${rows || `<tr><td colspan="5" class="hint">Sin redes todavía${c.service==="active"?"":" (conectá la VPN para ver las dinámicas)"}</td></tr>`}</table>`;
+  if (!ed) return table + `<div class="hint" style="margin-top:6px">Solo lectura: las redes las gestiona el admin o quien creó la VPN.</div>`;
+  return table + `
+    <div class="addnet" data-addnet="${esc(c.name)}">
+      <input name="real" placeholder="Red real (ej. 192.168.1.0/24)">
+      <input name="virtual" placeholder="Virtual (vacío = automática)">
+      <button type="button" class="mini primary" data-net="add">+ Agregar manual</button>
+    </div>
+    <div class="hint" style="margin-top:6px"><label class="chk" style="display:inline-flex;gap:6px;align-items:center"><span class="sw"><input type="checkbox" data-net="auto" ${c.auto_map?"checked":""}><span></span></span> Mapear dinámicas automáticamente (10.${200+ +c.id}.X.Y)</label></div>`;
+}
+
+function getFavs(){
+  try {
+    const k = "vpnhub_favs_" + (ME.name || "guest");
+    return new Set(JSON.parse(localStorage.getItem(k) || "[]"));
+  } catch(e){ return new Set(); }
+}
+function isFav(name){ return getFavs().has(name); }
+function toggleFav(name){
+  const f = getFavs();
+  if (f.has(name)) f.delete(name); else f.add(name);
+  try { localStorage.setItem("vpnhub_favs_" + (ME.name || "guest"), JSON.stringify([...f])); } catch(e){}
+  render();
+}
+
+function card(c){
+  if (c.error) return `<section class="card"><b>${esc(c.name)}</b><span class="err">${esc(c.error)}</span></section>`;
+  const [cls,label] = health(c);
+  const act = c.nets.filter(n=>n.state==="activa").length, dyn = c.nets.filter(n=>n.origin==="dinamica").length;
+  const hosts = c.hosts.map(h=>`<tr><td><span class="copy" data-copy="${esc(h.name)}">${esc(h.name)}</span></td><td><code class="copy" data-copy="${esc(h.virtual||"")}">${esc(h.virtual||"?")}</code></td><td class="hint">${esc(h.real)}</td></tr>`).join("");
+  const chk = c.check_ip ? (c.check_ok==null ? "—" : (c.check_ok ? `ok ${c.check_ms!=null? c.check_ms.toFixed(0)+" ms":""}` : "falla")) + ` <span class="hint">(${esc(c.check_ip)})</span>` : `<span class="hint">sin IP de chequeo</span>`;
+  const b = busy[c.name] ? "disabled" : "";
+  const fav = isFav(c.name);
+  return `<section class="card" data-name="${esc(c.name)}">
+    <div class="top"><span class="dot ${cls}"></span><span class="name">${esc(c.name)}</span><button type="button" class="star-btn ${fav?"fav":""}" data-fav="${esc(c.name)}" title="${fav?"Quitar de favoritos":"Marcar favorito"}">${fav?"★":"☆"}</button><span class="tag">${esc(c.label)}</span><span class="tag">ID ${esc(c.id)}</span>
+      ${c.scope==="personal" ? `<span style="font-size:11px;color:var(--dyn)" title="${c.owner ? 'Personal de ' + esc(c.owner) : 'Personal'}">Personal${c.owner && ME.role === 'admin' ? ` (${esc(c.owner)})` : ''}</span>` : `<span class="tag" title="Creada por ${esc(c.created_by||"admin")}">General</span>`}
+      ${c.dns_alias && c.dns_alias !== c.name ? `<span class="tag" style="color:var(--accent);border-color:var(--accent)" title="Alias DNS corto">@${esc(c.dns_alias)}</span>` : ""}
+      <span class="badge ${cls} ml">${label}</span>${c.can_edit ? `<button type="button" class="gear" data-cfg title="Configurar">⚙</button>` : ""}</div>
+    ${c.description ? `<div class="card-desc">${esc(c.description)}</div>` : ""}
+    ${c.missing && c.missing.length ? `<div class="miss">Falta cargar: ${esc(c.missing.join(", "))} ${c.can_edit ? `<button type="button" class="mini" data-cfg>Configurar</button>` : `<span class="hint">(pedíselo al admin)</span>`}</div>` : ""}
+    ${c.waiting_otp ? `<form class="otp" data-otp="${esc(c.name)}"><input name="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="Código 2FA" required><button class="primary" ${b}>Enviar</button></form>` : ""}
+    <dl>
+      <dt>Servidor</dt><dd>${c.server ? `<span class="copy" data-copy="${esc(c.server)}" title="Click para copiar">${esc(c.server)}</span>` : `<span class="hint">—</span>`}</dd>
+      <dt>IP túnel</dt><dd>${c.tunnel_ip?`<code>${esc(c.tunnel_ip)}</code> <span class="hint">${esc(c.iface)}</span>`:"—"}</dd>
+      <dt>Chequeo</dt><dd>${chk}</dd>
+      ${c.type==="wireguard" ? `<dt>Handshake</dt><dd>${formatHandshake(c)}</dd>` : ""}
+      ${formatTransfer(c) ? `<dt>Tráfico</dt><dd>${formatTransfer(c)}</dd>` : ""}
+      <dt>Activo desde</dt><dd>${c.service==="active"?since(c.since):"—"} ${+c.restarts?`<span class="hint">· ${esc(c.restarts)} reinicios</span>`:""}</dd>
+    </dl>
+    <details data-k="nets"><summary>Redes · ${act} activas${dyn?` · ${dyn} dinámicas`:""}</summary>${netsTable(c)}</details>
+    ${c.hosts.length?`<details data-k="hosts"><summary>Nombres DNS (${c.hosts.length})</summary><table><tr><th>Nombre</th><th>IP</th><th>Real</th></tr>${hosts}</table></details>`:""}
+    <details data-k="log"><summary>Log</summary><pre class="log">cargando…</pre></details>
+    <div class="btns">
+      ${c.disabled && !c.can_connect
+        ? `<button type="button" disabled style="opacity:.6;cursor:not-allowed" title="Deshabilitada por el administrador">Deshabilitada</button>`
+        : (c.service==="active"
+          ? `<button type="button" data-act="restart" ${b}>Reconectar</button><button type="button" data-act="down" ${b}>Desconectar</button>`
+          : `<button type="button" class="primary" data-act="up" ${b}>${c.disabled ? "Habilitar y conectar" : "Conectar"}</button>`)}
+    </div>
+    ${formatCardUserHint(c)}
+  </section>`;
+}
+
+function sortIndicator(f){
+  if (sortField !== f) return "";
+  return sortOrder === "asc" ? " ▴" : " ▾";
+}
+
+function rowVpn(c){
+  if (c.error) {
+    return `<tr class="row-vpn" data-name="${esc(c.name)}"><td colspan="9"><b>${esc(c.name)}</b> <span class="err">${esc(c.error)}</span></td></tr>`;
+  }
+  const [cls, label] = health(c);
+  const act = c.nets.filter(n=>n.state==="activa").length, dyn = c.nets.filter(n=>n.origin==="dinamica").length;
+  const hosts = c.hosts.map(h=>`<tr><td><span class="copy" data-copy="${esc(h.name)}">${esc(h.name)}</span></td><td><code class="copy" data-copy="${esc(h.virtual||"")}">${esc(h.virtual||"?")}</code></td><td class="hint">${esc(h.real)}</td></tr>`).join("");
+  const chk = c.check_ip ? (c.check_ok==null ? "—" : (c.check_ok ? `<span style="color:var(--ok)">ok ${c.check_ms!=null? c.check_ms.toFixed(0)+" ms":""}</span>` : `<span style="color:var(--bad)">falla</span>`)) + ` <span class="hint" style="font-size:11px">(${esc(c.check_ip)})</span>` : `<span class="hint">sin IP</span>`;
+  const b = busy[c.name] ? "disabled" : "";
+  const fav = isFav(c.name);
+  const subOpen = !!openState[c.name + ":sub"];
+
+  const mainRow = `<tr class="row-vpn ${subOpen ? "sub-open" : ""}" data-name="${esc(c.name)}">
+    <td class="col-fav"><button type="button" class="star-btn ${fav?"fav":""}" data-fav="${esc(c.name)}" title="${fav?"Quitar favorito":"Marcar favorito"}">${fav?"★":"☆"}</button></td>
+    <td class="col-st"><span class="dot ${cls}"></span> <span class="badge ${cls}" style="font-size:11px;padding:2px 7px">${label}</span></td>
+    <td class="col-name">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <b style="font-size:13.5px;cursor:pointer" data-cfg title="Configurar ${esc(c.name)}">${esc(c.name)}</b>
+        <span class="tag" style="font-size:10.5px;padding:1px 5px">ID ${esc(c.id)}</span>
+        ${c.scope==="personal" ? `<span style="font-size:10.5px;color:var(--dyn)" title="${c.owner ? 'Personal de ' + esc(c.owner) : 'Personal'}">Personal${c.owner && ME.role === 'admin' ? ` (${esc(c.owner)})` : ''}</span>` : `<span class="tag" style="font-size:10.5px;padding:1px 5px" title="Creada por ${esc(c.created_by||"admin")}">General</span>`}
+        ${c.dns_alias && c.dns_alias !== c.name ? `<span class="tag" style="font-size:10px;padding:1px 5px;color:var(--accent);border-color:var(--accent)" title="Alias DNS corto">@${esc(c.dns_alias)}</span>` : ""}
+      </div>
+      ${c.description ? `<div class="card-desc list-desc" title="${esc(c.description)}">${esc(c.description)}</div>` : ""}
+      ${c.missing && c.missing.length ? `<div class="miss" style="padding:2px 6px;font-size:11px;margin-top:2px">Falta: ${esc(c.missing.join(", "))} ${c.can_edit ? `<button type="button" class="mini" data-cfg style="margin-left:4px">Configurar</button>` : ""}</div>` : ""}
+    </td>
+    <td class="col-type"><span class="tag">${esc(c.label)}</span></td>
+    <td class="col-server">${c.server ? `<span class="copy col-server-text" data-copy="${esc(c.server)}" title="${esc(c.server)} (click para copiar)">${esc(c.server)}</span>` : `<span class="hint">—</span>`}</td>
+    <td class="col-ip">
+      ${c.tunnel_ip ? `
+        <div style="display:flex;align-items:center;gap:4px">
+          <code class="copy" data-copy="${esc(c.tunnel_ip)}">${esc(c.tunnel_ip)}</code>
+          ${c.iface?`<span class="hint" style="font-size:10.5px">${esc(c.iface)}</span>`:""}
+        </div>
+        ${(c.type==="wireguard" || formatTransfer(c)) ? `
+          <div style="font-size:10.5px;color:var(--muted);margin-top:2px;display:flex;gap:6px;align-items:center;line-height:1.2">
+            ${c.type==="wireguard" ? `<span title="Último Handshake">HS: ${formatHandshake(c)}</span>` : ""}
+            ${formatTransfer(c) ? `<span title="Tráfico transmitido">${formatTransfer(c)}</span>` : ""}
+          </div>
+        ` : ""}
+      ` : `<span class="hint">—</span>`}
+    </td>
+    <td class="col-check">${chk}</td>
+    <td class="col-nets">
+      <button type="button" class="sub-toggle-btn ${subOpen?'active':''}" data-sub-toggle="${esc(c.name)}" title="Ver redes, DNS y logs">
+        <span>${act} activas</span>
+        <span style="font-size:9.5px;opacity:.7">${subOpen ? "▲" : "▼"}</span>
+      </button>
+    </td>
+    <td class="col-act">
+      <div class="vpn-act-box">
+        <div class="vpn-act-group">
+          ${c.disabled && !c.can_connect
+            ? `<button type="button" class="mini" disabled style="min-width:64px;opacity:.6;cursor:not-allowed" title="Deshabilitada por el administrador">Deshabilitada</button>`
+            : (c.service==="active"
+              ? `<button type="button" class="mini" data-act="restart" ${b} title="Reconectar">Reconectar</button><button type="button" class="mini danger" data-act="down" ${b} title="Desconectar">Desconectar</button>`
+              : `<button type="button" class="mini primary" data-act="up" ${b} title="${c.disabled ? "Habilitar y conectar" : "Conectar"}" style="min-width:64px">${c.disabled ? "Habilitar" : "Conectar"}</button>`)}
+          ${c.can_edit ? `<button type="button" class="gear" data-cfg title="Configurar">⚙</button>` : ""}
+        </div>
+        ${formatListUserHint(c)}
+      </div>
+    </td>
+  </tr>`;
+
+  const subRow = `<tr class="sub-row" data-name="${esc(c.name)}" id="sub-${esc(c.name)}" ${subOpen ? "" : "hidden"}>
+    <td colspan="9">
+      <div class="sub-content">
+        ${c.waiting_otp ? `<form class="otp" data-otp="${esc(c.name)}" style="max-width:380px"><input name="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="Código 2FA" required><button class="primary" ${b}>Enviar</button></form>` : ""}
+        <details data-k="nets" ${openState[c.name+":nets"]?"open":""}><summary>Redes · ${act} activas${dyn?` · ${dyn} dinámicas`:""}</summary>${netsTable(c)}</details>
+        ${c.hosts.length ? `<details data-k="hosts" ${openState[c.name+":hosts"]?"open":""}><summary>Nombres DNS (${c.hosts.length})</summary><table><tr><th>Nombre</th><th>IP</th><th>Real</th></tr>${hosts}</table></details>` : ""}
+        <details data-k="log" ${openState[c.name+":log"]?"open":""}><summary>Log</summary><pre class="log">cargando…</pre></details>
+      </div>
+    </td>
+  </tr>`;
+
+  return mainRow + subRow;
+}
+
+function renderTableView(list){
+  const th = (field, label, cls="") => `<th class="${cls} ${sortField===field?'sort-active':''}" data-sort="${field}" title="Ordenar por ${label}">${label}${sortIndicator(field)}</th>`;
+  return `<div class="vpn-table-wrap">
+    <table class="vpn-table">
+      <thead>
+        <tr>
+          <th class="col-fav" title="Favoritos">★</th>
+          ${th("status", "Estado", "col-st")}
+          ${th("name", "Cliente / VPN", "col-name")}
+          ${th("type", "Tipo", "col-type")}
+          ${th("server", "Servidor / Endpoint", "col-server")}
+          ${th("ip", "IP Túnel", "col-ip")}
+          ${th("check", "Chequeo", "col-check")}
+          <th class="col-nets">Redes</th>
+          <th class="col-act" style="cursor:default">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map(rowVpn).join("")}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function updateViewBtns(){
+  $("#btnViewCards")?.classList.toggle("active", viewMode === "cards");
+  $("#btnViewList")?.classList.toggle("active", viewMode === "list");
+}
+
+function setViewMode(m){
+  viewMode = m;
+  try { localStorage.setItem("vpnhub_view", m); } catch(e){}
+  updateViewBtns();
+  render();
+}
+
+function render(){
+  if (document.activeElement && document.activeElement.closest(".addnet")) return;   // no pisar lo que se está escribiendo
+  const q = $("#filter").value.trim().toLowerCase(), sc = $("#scopeFilter").value;
+  const favs = getFavs();
+  const list = data.filter(c => (!q || JSON.stringify(c).toLowerCase().includes(q)) && (!sc || c.scope === sc));
+  // Favoritos siempre arriba, luego por columna seleccionada
+  list.sort((a, b) => {
+    const fa = favs.has(a.name) ? 1 : 0;
+    const fb = favs.has(b.name) ? 1 : 0;
+    if (fa !== fb) return fb - fa;
+
+    let cmp = 0;
+    if (sortField === "name") cmp = (a.name || "").localeCompare(b.name || "");
+    else if (sortField === "id") cmp = (a.id || 0) - (b.id || 0);
+    else if (sortField === "status") cmp = (health(a)[1] || "").localeCompare(health(b)[1] || "");
+    else if (sortField === "type") cmp = (a.label || "").localeCompare(b.label || "");
+    else if (sortField === "server") cmp = (a.server || "").localeCompare(b.server || "");
+    else if (sortField === "ip") cmp = (a.tunnel_ip || "").localeCompare(b.tunnel_ip || "");
+    else if (sortField === "check") cmp = (a.check_ok ? 1 : (a.check_ok === false ? -1 : 0)) - (b.check_ok ? 1 : (b.check_ok === false ? -1 : 0));
+    else cmp = (a.id || 0) - (b.id || 0);
+
+    return sortOrder === "asc" ? cmp : -cmp;
+  });
+  const ok = data.filter(c=>!c.error && health(c)[0]==="ok").length;
+  $("#sum").textContent = `${ok}/${data.length} conectados · ${new Date().toLocaleTimeString("es-AR")}`;
+  const grid = $("#grid");
+  updateViewBtns();
+  if (viewMode === "list") {
+    grid.className = "view-list";
+    grid.innerHTML = list.length ? renderTableView(list) : `<div class="empty">${data.length?"Sin coincidencias":"Todavía no hay VPN. Creá la primera con «+ Nueva VPN»."}</div>`;
+  } else {
+    grid.className = "view-cards";
+    grid.innerHTML = list.length ? list.map(card).join("") : `<div class="empty">${data.length?"Sin coincidencias":"Todavía no hay VPN. Creá la primera con «+ Nueva VPN»."}</div>`;
+  }
+  grid.querySelectorAll("details").forEach(d=>{
+    const card = d.closest(".card, .sub-row");
+    const name = card?.dataset.name;
+    if (!name) return;
+    const key = name + ":" + d.dataset.k;
+    if (openState[key]) { d.open = true; if (d.dataset.k==="log") loadLog(d, name); }
+    d.addEventListener("toggle",()=>{ openState[key]=d.open; if(d.open && d.dataset.k==="log") loadLog(d, name); });
+  });
+}
+
+async function refresh(){
+  try {
+    const r = await api("/api/status");
+    data = (r.clients || []).map(c => ({nets:[], hosts:[], missing:[], can_edit:true, scope:"general", ...c}));
+    if (r.me) {
+      ME = r.me;
+      $("#btnMe").innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-1.5px;margin-right:5px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${esc(ME.name)}`;
+      $("#btnTraffic").hidden = ME.role !== "admin";
+      $("#btnUsers").hidden = ME.role !== "admin";
+      $("#btnLogs").hidden = ME.role !== "admin";
+    }
+    render();
+
+    try {
+      const cRes = await api("/api/conflicts");
+      const cBox = $("#conflictsBox");
+      const confs = cRes.conflicts || {};
+      const cKeys = Object.keys(confs);
+      if (cBox) {
+        if (cKeys.length > 0) {
+          cBox.hidden = false;
+          cBox.innerHTML = cKeys.map(k => {
+            const item = confs[k];
+            const cls = (item.clients || []).map(x => `<b>${esc(x.alias || x.client)}</b>`).join(", ");
+            const ov = item.active_override ? ` · <span style="color:var(--ok)">Ruta asignada a: ${esc(item.active_override)}</span>` : ` · <span style="color:var(--warn)">Sin ruta asignada (portal en puerto 80 activo)</span>`;
+            return `<div class="miss" style="background:#451a0366;border:1px solid var(--warn);color:var(--warn);padding:8px 14px;border-radius:8px;font-size:12.5px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div>⚠️ <b>Conflicto en red real ${esc(k)}</b>: activa en ${cls}${ov}</div>
+              <div style="display:flex;gap:6px">
+                ${(item.clients || []).map(x => `<button type="button" class="mini ${item.active_override === x.client ? 'primary':''}" onclick="setConflictOverride('${esc(k)}', '${esc(x.client)}')">Usar ${esc(x.alias || x.client)}</button>`).join("")}
+                ${item.active_override ? `<button type="button" class="mini" onclick="setConflictOverride('${esc(k)}', '')">Quitar asignación</button>` : ""}
+              </div>
+            </div>`;
+          }).join("");
+        } else {
+          cBox.hidden = true;
+          cBox.innerHTML = "";
+        }
+      }
+    } catch(e){}
+  }
+  catch(e){ $("#sum").textContent = "error al leer estado: "+e.message; }
+}
+
+window.setConflictOverride = async (subnet, client) => {
+  try {
+    await post("/api/override-route", {subnet, client});
+    toast(client ? `Ruta ${subnet} asignada a ${client}` : `Asignación de ruta ${subnet} quitada`);
+    refresh();
+  } catch(e){
+    toast("Error: " + e.message);
+  }
+};
+async function loadLog(d, explicitName){
+  const name = explicitName || d.closest(".card, .sub-row")?.dataset.name;
+  if (!name) return;
+  const pre = d.querySelector("pre");
+  try { pre.textContent = (await api(`/api/${name}/log`)).log || "(vacío)"; pre.scrollTop = pre.scrollHeight; }
+  catch(e){ pre.textContent = "error: "+e.message; }
+}
+async function act(name, action, body){
+  busy[name]=true;
+  const c = data.find(x => x.name === name);
+  if (c && (action === "up" || action === "restart" || action === "otp")) {
+    c.connected_by = ME?.name || "admin";
+    c.last_user = ME?.name || "admin";
+    c.connected_at = Math.floor(Date.now() / 1000);
+    c.last_at = Math.floor(Date.now() / 1000);
+  } else if (c && action === "down") {
+    c.connected_by = null;
+  }
+  render();
+  try { await post(`/api/${name}/${action}`, body); toast(`${name}: ${action==="otp"?"código enviado":action} ok`); }
+  catch(e){ toast(`${name}: ${e.message}`); }
+  busy[name]=false; setTimeout(refresh, 2500);
+}
+async function netAction(name, body){
+  try { const r = await post(`/api/${name}/nets`, body); toast(`${name}: ${r.msg}`); await refresh(); return true; }
+  catch(e){ toast(`${name}: ${e.message}`); await refresh(); return false; }
+}
+
+/* ---------------- importadores ---------------- */
+const slug = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,31);
+function splitHostPort(s, def){ s=String(s||"").trim(); const m=s.match(/^\[?([^\]]+?)\]?(?::(\d+))?$/); return {host:m?m[1]:s, port:(m&&m[2])||def||""}; }
+function xmlText(el, tag){ const x = el.getElementsByTagName(tag)[0]; return x ? x.textContent.trim() : ""; }
+
+const IMPORTERS = {
+  forti: { accept:".xml,.conf", help:"FortiClient → Configuración → Copia de seguridad (sin contraseña). Las contraseñas no se importan.",
+    parse(text){
+      if (!text.trim().startsWith("<")) throw new Error("El archivo está cifrado o no es XML: exportalo sin contraseña.");
+      const doc = new DOMParser().parseFromString(text, "application/xml");
+      if (doc.querySelector("parsererror")) throw new Error("XML inválido");
+      const out = [];
+      const ssl = doc.getElementsByTagName("sslvpn")[0];
+      if (ssl) {
+        for (const c of ssl.getElementsByTagName("connection")) {
+          const hp = splitHostPort(xmlText(c,"server"), "443");
+          if (hp.host) {
+            out.push({
+              type: "forti",
+              label: xmlText(c,"name") || hp.host,
+              name: slug(xmlText(c,"name")),
+              fields: {SERVER:hp.host, PORT:hp.port},
+              secrets: {VPN_USER: xmlText(c,"username")}
+            });
+          }
+        }
+      }
+      const ipsec = doc.getElementsByTagName("ipsecvpn")[0];
+      if (ipsec) {
+        for (const c of ipsec.getElementsByTagName("connection")) {
+          const ike = c.getElementsByTagName("ike_settings")[0];
+          if (!ike) continue;
+          const srvRaw = xmlText(ike, "server");
+          const srv = srvRaw.split(";")[0].trim();
+          if (!srv) continue;
+          const authData = c.getElementsByTagName("auth_data")[0] || ike;
+          const psk = xmlText(authData, "preshared_key");
+          const localid = xmlText(ike, "localid");
+          const ikeVer = (xmlText(ike, "version") || "2").trim();
+          const rawDh = xmlText(ike, "dhgroup").split(";")[0].trim();
+          const dh = rawDh ? (rawDh.toLowerCase().startsWith("dh") ? rawDh.toLowerCase() : "dh" + rawDh) : "dh14";
+          const xauth = ike.getElementsByTagName("xauth")[0];
+          const user = xauth ? xmlText(xauth, "username") : "";
+          const pass = xauth ? xmlText(xauth, "password") : "";
+          const cName = xmlText(c, "name") || srv;
+          out.push({
+            type: "forti_ipsec",
+            label: cName + (ikeVer === "1" ? " · IPsec (IKEv1)" : " · IPsec (IKEv2)"),
+            name: slug(cName),
+            fields: {SERVER: srv, IKE_VERSION: ikeVer, AUTHGROUP: localid, DHGROUP: dh},
+            secrets: {VPN_PSK: psk, VPN_USER: user, VPN_PASS: pass}
+          });
+        }
+      }
+      return out;
+    }},
+  forti_ipsec: { accept:".xml,.conf", help:"FortiClient IPsec: XML exportado (Backup) o .conf",
+    parse(text, fname){ return IMPORTERS.forti.parse(text, fname); }
+  },
+  anyconnect: { accept:".xml", help:"Perfil XML de AnyConnect (ProgramData\\Cisco\\Cisco AnyConnect Secure Mobility Client\\Profile).",
+    parse(text){
+      const doc = new DOMParser().parseFromString(text, "application/xml");
+      if (doc.querySelector("parsererror")) throw new Error("XML inválido");
+      return [...doc.getElementsByTagName("HostEntry")].map(h=>{
+        const hp = splitHostPort(xmlText(h,"HostAddress"), "443");
+        return {label: xmlText(h,"HostName") || hp.host, name: slug(xmlText(h,"HostName")), fields:{SERVER:hp.host, PORT:hp.port, AUTHGROUP: xmlText(h,"UserGroup")}};
+      }).filter(x=>x.fields.SERVER);
+    }},
+  l2tp: { accept:".pbk,.txt", help:"Windows: %APPDATA%\\Microsoft\\Network\\Connections\\Pbk\\rasphone.pbk. La clave compartida y la contraseña no se exportan.",
+    parse(text){
+      const out=[]; let cur=null;
+      for (const raw of text.split(/\r?\n/)){
+        const line=raw.trim(); const sec=line.match(/^\[(.+)\]$/);
+        if (sec){ cur={label:sec[1], name:slug(sec[1]), fields:{}, secrets:{}, strategy:""}; out.push(cur); continue; }
+        if (!cur) continue;
+        const kv=line.match(/^([^=]+)=(.*)$/); if(!kv) continue;
+        if (kv[1]==="PhoneNumber" && kv[2]) cur.fields.SERVER = kv[2].trim();
+        if (kv[1]==="VpnStrategy") cur.strategy = kv[2].trim();
+      }
+      return out.filter(x=>x.fields.SERVER).map(x=>({...x, label: x.label + ({"3":" · L2TP","4":" · L2TP","1":" · PPTP","2":" · PPTP","5":" · SSTP","6":" · SSTP","7":" · IKEv2","8":" · IKEv2"}[x.strategy]||"")}));
+    }},
+  openvpn: { accept:".ovpn,.conf", help:"El .ovpn tiene que traer los certificados embebidos (<ca>, <cert>, <key>).", file:"OVPN",
+    parse(text, fname){ return [{label:fname, name:slug(fname.replace(/\.(ovpn|conf)$/i,"")), fields:{}, secrets:{OVPN:text}}]; }},
+  wireguard: { accept:".conf", help:"El .conf exportado de la app de WireGuard o de MikroTik Back To Home.", file:"WG_CONF",
+    parse(text, fname){ return [{label:fname, name:slug(fname.replace(/\.conf$/i,"")), fields:{}, secrets:{WG_CONF:text}}]; }},
+};
+
+/* ---------------- importación múltiple (varios archivos, carpeta o .zip) ---------------- */
+const RAS_STRATEGY = {"1":"PPTP","2":"PPTP","5":"SSTP","6":"SSTP","7":"IKEv2","8":"IKEv2"};   // 0/3/4/vacío = L2TP o automático
+function detectType(text){
+  const t = text.replace(/^﻿/, ""), head = t.trimStart();
+  if (/^\s*\[Interface\]/im.test(t) && /^\s*PrivateKey\s*=/im.test(t)) return "wireguard";
+  if (head.startsWith("<")){
+    if (/<AnyConnectProfile|<HostEntry/i.test(t)) return "anyconnect";
+    if (/<forticlient_configuration|<sslvpn|<ipsecvpn/i.test(t)) return "forti";
+    return null;
+  }
+  if (/^#config-version=F/m.test(t)) return {skip:"backup de un FortiGate (no es un perfil de cliente)"};
+  if (/^\s*remote\s+\S+/im.test(t) && /^\s*(client|tls-client|dev\s+tun)\b/im.test(t)) return "openvpn";
+  if (/^\s*\[[^\]]+\]\s*$/m.test(t) && /^\s*PhoneNumber=/m.test(t)) return "l2tp";
+  return null;
+}
+async function unzip(file){
+  // lector ZIP mínimo (directorio central + deflate-raw del navegador); sin dependencias externas
+  const buf = new Uint8Array(await file.arrayBuffer()), dv = new DataView(buf.buffer), out = [];
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  if (eocd < 0) throw new Error("zip inválido");
+  let p = dv.getUint32(eocd + 16, true);
+  for (let n = dv.getUint16(eocd + 10, true); n > 0; n--){
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const loc = dv.getUint32(p + 42, true), name = new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nlen));
+    p += 46 + nlen + xlen + clen;
+    if (name.endsWith("/") || csize > 2_000_000) continue;
+    const start = loc + 30 + dv.getUint16(loc + 26, true) + dv.getUint16(loc + 28, true), raw = buf.subarray(start, start + csize);
+    let data;
+    if (method === 0) data = raw;
+    else if (method === 8) data = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+    else continue;
+    out.push({name: name.split("/").pop(), text: () => Promise.resolve(new TextDecoder().decode(data)), size: data.length});
+  }
+  return out;
+}
+async function bulkParse(fileList){
+  const files = [];
+  for (const f of fileList){
+    if (/\.zip$/i.test(f.name)){ try { files.push(...await unzip(f)); } catch(e){ files.push({name:f.name, err:"no pude abrir el zip: "+e.message}); } }
+    else files.push(f);
+  }
+  const rows = [];
+  for (const f of files){
+    const base = {file: f.name};
+    if (f.err){ rows.push({...base, skip: f.err}); continue; }
+    if (f.size > 2_000_000){ rows.push({...base, skip:"archivo demasiado grande"}); continue; }
+    let text; try { text = await f.text(); } catch { rows.push({...base, skip:"no se pudo leer"}); continue; }
+    const type = detectType(text);
+    if (!type){ rows.push({...base, skip: text.trimStart().startsWith("<") || /^[\x20-\x7e\s]*$/.test(text.slice(0,200)) ? "formato no reconocido" : "cifrado o binario (exportalo sin contraseña)"}); continue; }
+    if (type.skip){ rows.push({...base, skip: type.skip}); continue; }
+    let items;
+    try { items = IMPORTERS[type].parse(text, f.name); } catch(e){ rows.push({...base, skip: e.message}); continue; }
+    if (!items.length){ rows.push({...base, skip:"no encontré conexiones"}); continue; }
+    const stem = slug(f.name.replace(/\.[^.]+$/, ""));
+    for (const it of items){
+      const itType = it.type || type;
+      const strat = itType === "l2tp" ? RAS_STRATEGY[it.strategy] : null;
+      if (strat){ rows.push({...base, label: it.label, type: itType, skip: `${strat}: tipo no soportado por el hub`}); continue; }
+      // un archivo = una VPN → nombre del archivo; archivos con varias conexiones → nombre de cada conexión
+      const name = items.length === 1 ? stem : (it.name || stem);
+      const server = it.fields?.SERVER || ((it.secrets?.WG_CONF || it.secrets?.OVPN || "").match(/^\s*(?:Endpoint\s*=|remote\s)\s*(\S+)/im) || [])[1] || "";
+      rows.push({...base, label: it.label, type: itType, name, server, fields: it.fields || {}, secrets: it.secrets || {}, sel: true});
+    }
+  }
+  // nombres únicos frente a las VPN visibles y dentro del lote
+  const taken = new Set(data.map(c => c.name));
+  for (const r of rows.filter(r => !r.skip)){
+    let n = r.name || "vpn", i = 2;
+    while (taken.has(n)) n = `${(r.name || "vpn").slice(0, 28)}-${i++}`;
+    r.name = n; taken.add(n);
+  }
+  return rows;
+}
+function renderBulk(box, rows){
+  const ok = rows.filter(r => !r.skip), bad = rows.filter(r => r.skip);
+  box.innerHTML = `<div class="hint" style="margin:6px 0">${ok.length} VPN para importar${bad.length?` · ${bad.length} omitidos`:""}. El nombre se puede editar.</div>
+    <div style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:8px">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="text-align:left"><th style="padding:6px"><input type="checkbox" data-all checked></th><th>Nombre</th><th>Tipo</th><th>Servidor</th><th>Archivo</th><th>Resultado</th></tr></thead>
+      <tbody>${rows.map((r,i) => r.skip
+        ? `<tr style="opacity:.6"><td></td><td colspan="2">${esc(r.label||"")}</td><td></td><td>${esc(r.file)}</td><td class="err">${esc(r.skip)}</td></tr>`
+        : `<tr data-i="${i}"><td style="padding:4px 6px"><input type="checkbox" data-sel checked></td>
+             <td><input data-name value="${esc(r.name)}" pattern="[a-z0-9][a-z0-9_-]{0,30}" style="width:100%;min-width:150px"></td>
+             <td>${esc(META.types[r.type]?.label || r.type)}</td><td>${esc(r.server)}</td>
+             <td title="${esc(r.label||"")}">${esc(r.file)}</td><td data-res></td></tr>`).join("")}</tbody>
+    </table></div>`;
+  box.querySelector("[data-all]")?.addEventListener("change", e => box.querySelectorAll("[data-sel]").forEach(c => c.checked = e.target.checked));
+}
+
+/* ---------------- formulario de configuración ---------------- */
+function fieldInput(k, val){
+  const f = META.fields[k]; const v = esc(val ?? "");
+  if (f.kind==="bool") return `<label class="fl chk ${k==="AUTO_MAP"?"full":""}"><input type="checkbox" name="f:${k}" ${val==="1"?"checked":""}> ${esc(f.label)}</label>`;
+  if (f.kind==="textarea") return `<label class="fl full">${esc(f.label)}<textarea name="f:${k}" rows="3" placeholder="servidor=192.168.0.10 router=192.168.0.1">${esc((val||"").split(/\s+/).filter(Boolean).join("\n"))}</textarea>${f.help?`<span class="hint">${esc(f.help)}</span>`:""}</label>`;
+  if (k==="TRUSTED_CERT") return `<label class="fl full">${esc(f.label)}<div class="row"><input name="f:${k}" value="${v}" placeholder="vacío = el sistema valida el certificado"><button type="button" class="mini" data-fetchcert>Obtener</button></div><span class="hint" data-certinfo>${esc(f.help||"")}</span></label>`;
+  if (k==="IKE_VERSION") return `<label class="fl">${esc(f.label)}<select name="f:${k}"><option value="1" ${val==="1"?"selected":""}>IKEv1 (modo agresivo / XAuth)</option><option value="2" ${val!=="1"?"selected":""}>IKEv2 (strongSwan / EAP)</option></select>${f.help?`<span class="hint">${esc(f.help)}</span>`:""}</label>`;
+  if (k==="DHGROUP") return `<label class="fl">${esc(f.label)}<select name="f:${k}"><option value="dh14" ${(val==="dh14"||val==="14"||!val)?"selected":""}>Grupo 14 (MODP 2048-bit — recomendado)</option><option value="dh5" ${(val==="dh5"||val==="5")?"selected":""}>Grupo 5 (MODP 1536-bit)</option><option value="dh2" ${(val==="dh2"||val==="2")?"selected":""}>Grupo 2 (MODP 1024-bit — legado)</option><option value="dh19" ${(val==="dh19"||val==="19")?"selected":""}>Grupo 19 (ECP 256-bit)</option></select>${f.help?`<span class="hint">${esc(f.help)}</span>`:""}</label>`;
+  return `<label class="fl ${k==="SERVER"?"":""}">${esc(f.label)}<input name="f:${k}" value="${v}" placeholder="${esc(f.ph||"")}">${f.help?`<span class="hint">${esc(f.help)}</span>`:""}</label>`;
+}
+function secretInput(k, st, required){
+  const s = META.secrets[k]; st = st || {};
+  if (s.kind==="file") return `<label class="fl full">${esc(s.label)} ${st.set?`<span class="hint">· cargado: ${esc(st.summary||"")}</span>`:""}
+      <textarea name="s:${k}" rows="5" placeholder="${st.set?"Dejar vacío para conservar el actual. Pegá el nuevo contenido aquí.":"Pegá el contenido del archivo aquí"}"></textarea></label>`;
+  if (s.kind==="password") return `<label class="fl">${esc(s.label)}<input type="password" name="s:${k}" autocomplete="new-password" placeholder="${st.set?"•••••• guardada (vacío = no cambiar)":(required?"obligatoria":"")}"></label>`;
+  return `<label class="fl">${esc(s.label)}<input name="s:${k}" value="${esc(st.value||"")}" autocomplete="off"></label>`;
+}
+function connFieldset(type, cfg){
+  const t = META.types[type];
+  const hasOtp = t.fields.includes("OTP_REQUIRED") && t.secrets.includes("VPN_USER");
+
+  const otherFields = t.fields.filter(k => !hasOtp || k !== "OTP_REQUIRED")
+    .map(k => fieldInput(k, cfg?.fields?.[k] ?? (k==="PORT" ? ({forti:"443",anyconnect:"443"}[type]||"") : "")))
+    .join("");
+
+  let credsHtml = "";
+  let otherSecs = "";
+
+  if (hasOtp) {
+    const userVal = cfg?.secrets?.VPN_USER?.value ?? "";
+    const passSet = !!cfg?.secrets?.VPN_PASS?.set;
+    const passReq = t.required.includes("VPN_PASS");
+    const otpVal = cfg?.fields?.OTP_REQUIRED === "1";
+
+    credsHtml = `
+      <div class="full cred-row" style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-top:2px">
+        <label class="fl" style="flex:1;min-width:140px">
+          ${esc(META.secrets.VPN_USER.label)}
+          <input name="s:VPN_USER" value="${esc(userVal)}" autocomplete="off">
+        </label>
+        <label class="fl" style="flex:1;min-width:140px">
+          ${esc(META.secrets.VPN_PASS.label)}
+          <input type="password" name="s:VPN_PASS" autocomplete="new-password" placeholder="${passSet ? '•••••• guardada (vacío = no cambiar)' : (passReq ? 'obligatoria' : '')}">
+        </label>
+        <label class="fl chk" style="margin-bottom:8px;white-space:nowrap;cursor:pointer">
+          <input type="checkbox" name="f:OTP_REQUIRED" ${otpVal ? 'checked' : ''}> ${esc(META.fields.OTP_REQUIRED.label)}
+        </label>
+      </div>`;
+
+    otherSecs = t.secrets.filter(k => k !== "VPN_USER" && k !== "VPN_PASS")
+      .map(k => secretInput(k, cfg?.secrets?.[k], t.required.includes(k)))
+      .join("");
+  } else {
+    otherSecs = t.secrets.map(k => secretInput(k, cfg?.secrets?.[k], t.required.includes(k))).join("");
+  }
+
+  return `<fieldset><legend>Conexión · ${esc(t.label)}</legend>${otherFields}${credsHtml}${otherSecs}</fieldset>`;
+}
+function commonFieldset(cfg){
+  return `<fieldset><legend>Chequeo y DNS</legend>${META.common.map(k=>fieldInput(k, cfg?.fields?.[k] ?? (k==="AUTO_MAP"?"1":""))).join("")}</fieldset>`;
+}
+function collect(form, type){
+  const t = META.types[type], fields = {}, secrets = {};
+  for (const k of [...t.fields, ...META.common, "DESCRIPTION"]){
+    const el = form.elements["f:"+k]; if(!el) continue;
+    fields[k] = el.type==="checkbox" ? (el.checked?"1":"0") : (k==="HOSTS" ? el.value.split(/\s+/).filter(Boolean).join(" ") : el.value.trim());
+  }
+  for (const k of t.secrets){ const el = form.elements["s:"+k]; if (el && el.value !== "") secrets[k] = el.value; }
+  return {fields, secrets};
+}
+function applyImport(form, item){
+  for (const [k,v] of Object.entries(item.fields||{})){ const el=form.elements["f:"+k]; if(el && v) el.value=v; }
+  for (const [k,v] of Object.entries(item.secrets||{})){ const el=form.elements["s:"+k]; if(el && v) el.value=v; }
+  const nm=form.elements["name"]; if (nm && !nm.value && item.name) nm.value=item.name;
+  toast("Importado: "+item.label+". Completá contraseñas/claves.");
+}
+function wireImport(form, type){
+  form.querySelectorAll("[data-fetchcert]").forEach(b => b.onclick = async () => {
+    const srv = form.elements["f:SERVER"]?.value.trim(), port = form.elements["f:PORT"]?.value.trim() || "443";
+    const info = form.querySelector("[data-certinfo]");
+    if (!srv) return toast("Primero cargá el servidor");
+    b.disabled = true; info.textContent = "leyendo certificado…";
+    try { const r = await post("/api/cert", {server:srv, port}); form.elements["f:TRUSTED_CERT"].value = r.sha256; info.textContent = r.info; }
+    catch(e){ info.textContent = e.message; }
+    b.disabled = false;
+  });
+}
+
+/* ---------------- diálogos ---------------- */
+const dlg = $("#dlg");
+function openDialog(title, body, foot, headerExtra=""){ $("#dlgTitle").textContent = title; $("#dlgHeaderExtra").innerHTML = headerExtra; $("#dlgBody").innerHTML = body; $("#dlgFoot").innerHTML = foot; dlg.showModal(); return $("#dlgForm"); }
+dlg.addEventListener("click", e => { if (e.target.closest("[data-close]")) dlg.close(); });
+dlg.addEventListener("close", () => { const dt = $("#dlgToast"); if (dt) dt.classList.remove("show"); });
+$("#dlgForm").addEventListener("submit", e => e.preventDefault());
+
+function newDialog(){
+  const types = Object.entries(META.types).map(([k,t],i)=>`<label><input type="radio" name="type" value="${k}" ${i===0?"checked":""}><b>${esc(t.label)}</b><span>${esc(t.import)}</span></label>`).join("");
+  const form = openDialog("Nueva VPN",
+    `<input type="file" id="bulkFiles" multiple accept=".conf,.ovpn,.xml,.pbk,.txt,.zip" hidden>
+     <input type="file" id="bulkDir" webkitdirectory multiple hidden>
+     <div><div class="hint" style="margin-bottom:6px">Uso</div><div class="types">
+       <label><input type="radio" name="scope" value="general" checked><b>General</b><span>La ven los usuarios con acceso (el admin asigna permisos)</span></label>
+       <label><input type="radio" name="scope" value="personal"><b>🔒 Personal</b><span>Solo la ves vos. Nadie más la ve ni la edita</span></label>
+     </div></div>
+     <div id="singleBox" style="display:flex;flex-direction:column;gap:14px">
+     <label class="fl">Nombre del cliente<input name="name" required pattern="[a-z0-9][a-z0-9_-]{0,30}" placeholder="ej. mi-vpn (minúsculas, sin espacios)"></label>
+     <label class="fl">Descripción / Comentario (opcional)<input name="f:DESCRIPTION" placeholder="ej. Acceso a base de datos y servidores de producción"></label>
+     <div id="typeBox"><div class="hint" style="margin-bottom:6px">Tipo de VPN</div><div class="types">${types}
+       <div class="imp-card" id="btnBulkFiles" role="button" tabindex="0" title="Varias VPN de una vez: el tipo se detecta solo y el nombre sale del archivo">
+         <b>📥 Importar archivos</b><span>Varios archivos o un .zip · detecta el tipo de cada uno</span>
+         <a href="#" id="btnBulkDir">o elegir una carpeta…</a></div>
+     </div></div>
+     <div id="typeForm" style="display:flex;flex-direction:column;gap:14px"></div>
+     </div>
+     <div id="bulkPanel" hidden>
+       <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+         <b>📥 Importación múltiple</b><button type="button" class="mini" id="btnBulkOff">← Volver a crear una sola</button></div>
+       <div id="bulkBox"></div>
+     </div>
+     <label class="fl chk"><input type="checkbox" name="connect" checked> Conectar al crear (si están todos los datos)</label>
+     <div class="err" id="dlgErr"></div>`,
+    `<button type="button" data-close>Cancelar</button><button type="button" class="primary" id="btnCreate">Crear VPN</button>`);
+  form.querySelectorAll('input[name="type"]').forEach(r=>r.dataset.kind="type");
+  const paint = () => { const t = form.querySelector('input[name="type"]:checked').value; $("#typeForm").innerHTML = connFieldset(t, null) + commonFieldset(null); wireImport(form, t); };
+  form.querySelectorAll('input[name="type"]').forEach(r => r.onchange = paint); paint();
+
+  // --- modo importación múltiple ---
+  let bulk = null;
+  const setBulk = rows => {
+    bulk = rows;
+    $("#singleBox").hidden = !!rows; $("#bulkPanel").hidden = !rows;
+    if (!rows){ $("#bulkBox").innerHTML = ""; $("#btnCreate").textContent = "Crear VPN"; return; }
+    renderBulk($("#bulkBox"), rows);
+    const upd = () => { const n = $("#bulkBox").querySelectorAll("[data-sel]:checked").length; $("#btnCreate").textContent = `Importar ${n} VPN`; $("#btnCreate").disabled = !n; };
+    $("#bulkBox").onchange = upd; upd();
+    form.elements["connect"].checked = false;          // en lote, por defecto no conectar todas juntas
+  };
+  const loadBulk = async input => {
+    if (!input.files.length) return;
+    $("#singleBox").hidden = true; $("#bulkPanel").hidden = false;
+    $("#dlgErr").textContent = ""; $("#bulkBox").innerHTML = `<span class="hint">Leyendo ${input.files.length} archivo(s)…</span>`;
+    try { setBulk(await bulkParse([...input.files])); } catch(e){ $("#bulkBox").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    input.value = "";
+  };
+  $("#btnBulkFiles").onclick = () => $("#bulkFiles").click();
+  $("#btnBulkFiles").onkeydown = e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); $("#bulkFiles").click(); } };
+  $("#btnBulkDir").onclick = e => { e.preventDefault(); e.stopPropagation(); $("#bulkDir").click(); };
+  $("#bulkFiles").onchange = e => loadBulk(e.target);
+  $("#bulkDir").onchange = e => loadBulk(e.target);
+  $("#btnBulkOff").onclick = () => setBulk(null);
+
+  const createBulk = async () => {
+    const scope = form.elements["scope"].value, connect = form.elements["connect"].checked;
+    const trs = [...$("#bulkBox").querySelectorAll("tr[data-i]")].filter(tr => tr.querySelector("[data-sel]").checked);
+    $("#btnCreate").disabled = true; let ok = 0, fail = 0;
+    for (const tr of trs){
+      const r = bulk[+tr.dataset.i], res = tr.querySelector("[data-res]"), name = tr.querySelector("[data-name]").value.trim();
+      if (r.done) continue;
+      res.textContent = "creando…"; res.className = "hint";
+      const fields = {...r.fields, DESCRIPTION: (r.label && r.label !== r.file ? r.label + " · " : "") + "importada de " + r.file};
+      try {
+        const x = await post("/api/new", {name, type: r.type, fields, secrets: r.secrets, scope, connect});
+        r.done = true; ok++; tr.querySelector("[data-sel]").disabled = true; tr.querySelector("[data-name]").disabled = true;
+        res.className = ""; res.style.color = "var(--ok)";
+        res.textContent = "✓ creada" + (x.started ? " y conectando" : "") + (x.missing?.length ? " · falta: " + x.missing.join(", ") : "");
+      } catch(e){ fail++; res.className = "err"; res.textContent = e.message; }
+    }
+    toast(`${ok} VPN importadas${fail ? ` · ${fail} con error (corregí el nombre y reintentá)` : ""}`);
+    $("#btnCreate").textContent = fail ? "Reintentar las que fallaron" : "Listo"; $("#btnCreate").disabled = false;
+    if (!fail) $("#btnCreate").onclick = () => dlg.close();
+    await refresh();
+  };
+
+  $("#btnCreate").onclick = async () => {
+    if (bulk) return createBulk();
+    const t = form.querySelector('input[name="type"]:checked').value, name = form.elements["name"].value.trim();
+    const {fields, secrets} = collect(form, t);
+    $("#btnCreate").disabled = true; $("#dlgErr").textContent = "";
+    try {
+      const r = await post("/api/new", {name, type:t, fields, secrets, scope: form.elements["scope"].value, connect: form.elements["connect"].checked});
+      dlg.close(); toast(`${name} creada${r.started?" y conectando…":""}${r.missing.length?" · falta: "+r.missing.join(", "):""}`);
+      openState[name+":nets"] = true; await refresh();
+    } catch(e){ $("#dlgErr").textContent = e.message; }
+    $("#btnCreate").disabled = false;
+  };
+}
+
+async function configDialog(name){
+  let cfg; try { cfg = await api(`/api/${name}/config`); } catch(e){ return toast(e.message); }
+  const c = data.find(x=>x.name===name) || {nets:[], name, id:cfg.ID, auto_map:cfg.fields.AUTO_MAP!=="0"};
+  const isPersonal = !!(cfg.owner || c.scope === "personal");
+  const isDisabled = !!cfg.disabled;
+  const isDisabledByAdmin = !!cfg.disabled_by_admin;
+  const canToggleEnable = !isDisabledByAdmin || ME.role === "admin";
+  const switchTitle = isDisabledByAdmin
+    ? `Deshabilitada por administrador (${esc(cfg.disabled_by||'admin')})${!canToggleEnable ? ' — solo un admin puede habilitarla' : ''}`
+    : (isDisabled ? "VPN deshabilitada (clic para habilitar)" : "VPN habilitada (clic para deshabilitar)");
+
+  const headerExtra = `
+    <label class="sw" id="swHeaderEnable" title="${switchTitle}" style="margin-right:2px">
+      <input type="checkbox" id="cfgEnabled" ${!isDisabled ? 'checked' : ''} ${!canToggleEnable ? 'disabled' : ''}>
+      <span></span>
+    </label>`;
+
+  const form = openDialog(`Configurar ${name}`,
+    `<label class="fl">Nombre de la VPN<input name="name" value="${esc(name)}" placeholder="ej. mi_vpn" pattern="[a-z0-9_-]{1,30}" required></label>
+     <div><div class="hint" style="margin-bottom:6px">Uso de la VPN</div><div class="types">
+       <label><input type="radio" name="scope" value="general" ${!isPersonal ? 'checked' : ''}><b>General</b><span>Visible para usuarios con acceso asignado</span></label>
+       <label><input type="radio" name="scope" value="personal" ${isPersonal ? 'checked' : ''}><b>🔒 Privada (Personal)</b><span>Solo la ves vos. Nadie más la ve ni la edita</span></label>
+     </div></div>
+     <label class="fl" style="margin-top:2px">Descripción / Comentario (opcional)<input name="f:DESCRIPTION" value="${esc(cfg.fields.DESCRIPTION||'')}" placeholder="ej. Acceso a base de datos y servidores de producción"></label>
+     ${connFieldset(cfg.TYPE, cfg)}
+     ${commonFieldset(cfg)}
+     <fieldset><legend>Redes</legend><div class="full" id="cfgNets">${netsTable(c)}</div></fieldset>
+     <fieldset><legend>Zona peligrosa</legend><div class="full btns"><span class="hint">Elimina la VPN, sus credenciales y sus redes.</span><button type="button" class="danger" id="btnDel">Eliminar VPN</button></div></fieldset>
+     <div class="err" id="dlgErr"></div>`,
+    `<button type="button" data-close>Cancelar</button><button type="button" id="btnSave">Guardar</button><button type="button" class="primary" id="btnSaveR">Guardar y reconectar</button>`,
+    headerExtra);
+
+  const chk = form.querySelector('#cfgEnabled');
+  if (chk) {
+    chk.onchange = () => {
+      const en = chk.checked;
+      toast(en ? `VPN ${name} habilitada` : `VPN ${name} deshabilitada`);
+      chk.closest('.sw')?.setAttribute('title', en ? 'VPN habilitada (clic para deshabilitar)' : 'VPN deshabilitada (clic para habilitar)');
+    };
+  }
+
+  wireImport(form, cfg.TYPE);
+  const save = async (reconnect) => {
+    const {fields, secrets} = collect(form, cfg.TYPE); $("#dlgErr").textContent = "";
+    const newName = (form.elements["name"]?.value || "").trim().toLowerCase();
+    const scope = form.querySelector('input[name="scope"]:checked')?.value || "general";
+    const enabledEl = form.querySelector('#cfgEnabled');
+    const enabled = enabledEl ? enabledEl.checked : true;
+    try {
+      const r = await post(`/api/${name}/config`, {new_name: newName, fields, secrets, scope, enabled, reconnect});
+      dlg.close();
+      const finalName = r.name || newName || name;
+      toast(`${finalName}: guardado${r.restarted?" y reconectando":""}${r.missing?.length?" · falta: "+r.missing.join(", "):""}`);
+      refresh();
+    }
+    catch(e){ $("#dlgErr").textContent = e.message; }
+  };
+  $("#btnSave").onclick = () => save(false);
+  $("#btnSaveR").onclick = () => save(true);
+  $("#btnDel").onclick = async () => {
+    const typed = prompt(`Para eliminar escribí el nombre de la VPN: ${name}`);
+    if (typed !== name) return typed!==null && toast("El nombre no coincide");
+    try { await post(`/api/${name}/delete`, {confirm:name}); dlg.close(); toast(`${name} eliminada`); refresh(); }
+    catch(e){ $("#dlgErr").textContent = e.message; }
+  };
+  form.dataset.client = name;
+}
+
+/* ---------------- usuarios ---------------- */
+function in30DaysStr(){
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function tsToDateStr(ts){
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function fmtDate(ts){
+  if (!ts) return "—";
+  const d = new Date(ts * 1000);
+  return isNaN(d) ? "—" : d.toLocaleDateString("es-AR", {day:"2-digit", month:"2-digit", year:"numeric"});
+}
+
+function daysLeft(ts){
+  if (!ts) return null;
+  const diff = ts * 1000 - Date.now();
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+  return days > 0 ? days : 0;
+}
+
+function accessSummary(u, generalVpns){
+  if (u.role === "admin") return `<span class="hint">todas (admin)</span>`;
+  if (u.access === "*") return `<span class="badge ok">Todas (${generalVpns.length})</span>`;
+  const list = u.access || [];
+  if (!list.length) return `<span class="badge off">Ninguna</span>`;
+  return list.map(x => `<span class="tag" style="margin:1px 2px">${esc(x)}</span>`).join(" ");
+}
+
+function expireSummary(u){
+  if (!u.expires) return `<span class="hint">Sin límite</span>`;
+  if (u.expired) return `<span class="badge bad" title="Cuenta vencida">Expirado</span> <span class="hint" style="font-size:11px">${fmtDate(u.expires)}</span>`;
+  const d = daysLeft(u.expires);
+  return `<span class="badge ${d<=5?'warn':'ok'}">${d} d</span> <span class="hint" style="font-size:11px">${fmtDate(u.expires)}</span>`;
+}
+
+function twofaSummary(u){
+  if (!u.doble_factor || u.metodo_2fa === "ninguno") return `<span class="badge off">No</span>`;
+  if (u.metodo_2fa === "duo") return `<span class="badge warn" title="Cisco Duo">Duo</span>`;
+  if (u.metodo_2fa === "totp") return `<span class="badge ok" title="Google Authenticator (TOTP)">Authenticator</span>`;
+  return `<span class="badge ok">Sí</span>`;
+}
+
+async function usersDialog(){
+  let d; try { d = await api("/api/users"); } catch(e){ return toast(e.message); }
+  const rows = d.users.map(u=>`<tr data-user="${esc(u.name)}">
+      <td><b>${esc(u.name)}</b> <span class="tag">${esc(u.role)}</span>${u.name===ME.name?` <span class="hint">(vos)</span>`:""}${u.comment ? `<div class="hint" style="font-size:11.5px;margin-top:2px">${esc(u.comment)}</div>` : ""}</td>
+      <td><label class="sw" title="${u.enabled?"Deshabilitar":"Habilitar"}"><input type="checkbox" data-uen ${u.enabled?"checked":""} ${u.name===ME.name?"disabled":""}><span></span></label></td>
+      <td>${accessSummary(u, d.general_vpns)}</td>
+      <td>${expireSummary(u)}</td>
+      <td>${twofaSummary(u)}</td>
+      <td class="hint">${u.personal ? `🔒 ${u.personal}` : "—"}</td>
+      <td class="act" style="white-space:nowrap">
+        <button type="button" class="btn-wg-dl" data-dl-wg="/api/users/${esc(u.name)}/wireguard" data-dl-name="vpnhub-${esc(u.name)}.conf" title="Descargar perfil WireGuard (.conf) de ${esc(u.name)}"><svg viewBox="0 0 24 24" width="14" height="14" fill="#88171a"><path d="M23.98 11.645S24.533 0 11.735 0C.418 0 .064 11.17.064 11.17S-1.6 24 11.997 24C25.04 24 23.98 11.645 23.98 11.645zM8.155 7.576c2.4-1.47 5.469-.571 6.618 1.638.218.419.246 1.063.108 1.503-.477 1.516-1.601 2.366-3.145 2.728.455-.39.817-.832.933-1.442a2.112 2.112 0 0 0-.364-1.677 2.14 2.14 0 0 0-2.465-.75c-.95.36-1.47 1.228-1.377 2.294.087.99.839 1.632 2.245 1.876-.21.111-.372.193-.53.281a5.113 5.113 0 0 0-1.644 1.43c-.143.192-.24.208-.458.075-2.827-1.729-3.009-6.067.078-7.956zM6.04 18.258c-.455.116-.895.286-1.359.438.227-1.532 2.021-2.943 3.539-2.782a3.91 3.91 0 0 0-.74 2.072c-.504.093-.98.155-1.44.272zM15.703 3.3c.448.017.898.01 1.347.02a2.324 2.324 0 0 1 .334.047 3.249 3.249 0 0 1-.34.434c-.16.15-.341.296-.573.069-.055-.055-.187-.042-.283-.044-.447-.005-.894-.02-1.34-.003a8.323 8.323 0 0 0-1.154.118c-.072.013-.178.25-.146.338.078.207.191.435.359.567.619.49 1.277.928 1.9 1.413.604.472 1.167.99 1.51 1.7.446.928.46 1.9.267 2.877-.322 1.63-1.147 2.98-2.483 3.962-.538.395-1.205.62-1.821.903-.543.25-1.1.465-1.644.712-.98.446-1.53 1.51-1.369 2.615.149 1.015 1.04 1.862 2.059 2.037 1.223.21 2.486-.586 2.785-1.83.336-1.397-.423-2.646-1.845-3.024l-.256-.066c.38-.17.708-.291 1.012-.458q.793-.437 1.558-.925c.15-.096.231-.096.36.014.977.846 1.56 1.898 1.724 3.187.27 2.135-.74 4.096-2.646 5.101-2.948 1.555-6.557-.215-7.208-3.484-.558-2.8 1.418-5.34 3.797-5.83 1.023-.211 1.958-.637 2.685-1.425.47-.508.697-.944.775-1.141a3.165 3.165 0 0 0 .217-1.158 2.71 2.71 0 0 0-.237-.992c-.248-.566-1.2-1.466-1.435-1.656l-2.24-1.754c-.079-.065-.168-.06-.36-.047-.23.016-.815.048-1.067-.018.204-.155.76-.38 1-.56-.726-.49-1.554-.314-2.315-.46.176-.328 1.046-.831 1.541-.888a7.323 7.323 0 0 0-.135-.822c-.03-.111-.154-.22-.263-.283-.262-.154-.541-.281-.843-.434a1.755 1.755 0 0 1 .906-.28 3.385 3.385 0 0 1 .908.088c.54.123.97.042 1.399-.324-.338-.136-.676-.26-1.003-.407a9.843 9.843 0 0 1-.942-.493c.85.118 1.671.437 2.54.32l.022-.118-2.018-.47c1.203-.11 2.323-.128 3.384.388.299.146.61.266.897.432.14.08.233.24.348.365.09.098.164.23.276.29.424.225.89.234 1.366.223l.01-.16c.479.15 1.017.702 1.017 1.105-.776 0-1.55-.003-2.325.004-.083 0-.165.061-.247.094.078.046.155.128.235.131z"/></svg><span style="font-size:11px;line-height:1">📥</span></button>
+        <button type="button" class="mini primary" data-uedit="${esc(u.name)}">Editar</button>
+        <button type="button" class="mini" data-upw="${esc(u.name)}">Contraseña</button>
+        ${u.name!==ME.name?`<button type="button" class="mini danger" data-udel="${esc(u.name)}">Eliminar</button>`:""}
+      </td></tr>`).join("");
+
+  openDialog("Usuarios",
+    `<div id="usersBox" style="display:flex;flex-direction:column;gap:14px">
+     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:8px">
+       <table style="width:100%;min-width:620px;border-collapse:collapse">
+         <thead><tr style="position:sticky;top:0;background:var(--code);z-index:2"><th>Usuario / rol</th><th>Activo</th><th>Acceso VPN generales</th><th>Expira</th><th>2FA</th><th>Personales</th><th style="text-align:right">Acciones</th></tr></thead>
+         <tbody>${rows || '<tr><td colspan="7" class="hint">No hay usuarios</td></tr>'}</tbody>
+       </table>
+     </div>
+     <span class="hint">Las VPN 🔒 personales solo las ve su dueño; el admin no puede verlas ni editarlas. Al deshabilitar un usuario se apagan sus VPN personales; al eliminarlo se eliminan.</span>
+     <div class="btns" style="display:flex;gap:8px;flex-wrap:wrap">
+       <button type="button" class="primary" id="btnShowNU">+ Crear usuario</button>
+       <button type="button" id="btnDuoSettings">⚙ Configurar Cisco Duo</button>
+     </div>
+     <fieldset id="nuBox" hidden class="full" style="display:flex;flex-direction:column;gap:12px"><legend>Nuevo usuario</legend>
+       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+         <label class="fl">Usuario<input name="nu_name" autocomplete="off" placeholder="minúsculas, ej. jperez" required></label>
+         <label class="fl">Contraseña inicial<input name="nu_pass" type="password" autocomplete="new-password" placeholder="mínimo 8 caracteres" required></label>
+         <label class="fl">Rol<select name="nu_role"><option value="user">usuario</option><option value="admin">admin</option></select></label>
+       </div>
+       <label class="fl">Comentario / Nota
+         <input name="nu_comment" placeholder="ej. Soporte nivel 1, guardia técnica, etc.">
+       </label>
+       <fieldset class="full" style="display:flex;flex-direction:column;gap:8px">
+         <legend>Acceso a VPN generales</legend>
+         <div id="nu_admin_hint" class="hint" style="display:none">Los administradores tienen acceso a todas las VPN generales automáticamente.</div>
+         <div id="nu_access_fields">
+           <label class="fl chk" style="margin-bottom:6px">
+             <input type="checkbox" name="nu_all" checked> Acceso a todas las VPN generales
+           </label>
+           <div id="nu_vpn_list" class="vpn-access-grid" style="display:none">
+             ${d.general_vpns.map(v=>`
+               <label class="vpn-access-item" title="${esc(v.name)} (${esc(v.label||'')})">
+                 <input type="checkbox" name="nu_vpn" value="${esc(v.name)}">
+                 <span class="vpn-access-name"><b>${esc(v.name)}</b> <span class="hint" style="font-size:11px">${esc(v.label||"")}</span></span>
+               </label>
+             `).join("") || '<span class="hint">No hay VPN generales configuradas</span>'}
+            </div>
+         </div>
+       </fieldset>
+       <fieldset class="full" style="display:flex;flex-direction:column;gap:8px">
+         <legend>Vencimiento de la cuenta</legend>
+         <label class="fl chk">
+           <input type="checkbox" name="nu_expire"> Expire (definir fecha de vencimiento)
+         </label>
+         <div id="nu_expire_box" style="display:none;flex-direction:column;gap:4px">
+           <label class="fl" style="max-width:240px">Fecha de vencimiento
+             <input type="date" name="nu_expire_date" value="${in30DaysStr()}">
+           </label>
+           <span class="hint">Por defecto 30 días a partir de hoy. Vence al finalizar el día seleccionado.</span>
+         </div>
+       </fieldset>
+       <fieldset class="full" style="display:flex;flex-direction:column;gap:8px">
+         <legend>Autenticación de dos factores (2FA)</legend>
+         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+           <label class="fl">Método 2FA
+             <select name="nu_2fa">
+               <option value="ninguno">Desactivado</option>
+               <option value="totp">Google Authenticator (TOTP)</option>
+               <option value="duo">Cisco Duo</option>
+             </select>
+           </label>
+           <div id="nu_duo_box" style="display:none">
+             <label class="fl">Usuario en Cisco Duo (opcional)
+               <input name="nu_duo_user" placeholder="Dejar vacío para usar el mismo">
+             </label>
+             <span class="hint">Usuario registrado en la consola de Duo.</span>
+           </div>
+         </div>
+         <div id="nu_totp_box" style="display:none;background:var(--code);padding:12px;border-radius:8px">
+           <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+             <img id="nu_totp_qr" src="" style="width:130px;height:130px;background:#fff;padding:4px;border-radius:6px;display:none" alt="QR">
+             <div style="display:flex;flex-direction:column;gap:6px">
+               <b>Escanear con Google Authenticator</b>
+               <span class="hint">O cualquier app compatible (Authy, Microsoft Authenticator).</span>
+               <div style="font-family:monospace;font-size:12px;background:var(--bg);padding:4px 8px;border-radius:4px;word-break:break-all" id="nu_totp_key"></div>
+               <input type="hidden" name="nu_totp_secret">
+               <div><button type="button" class="mini" id="btnGenNuTotp">Regenerar clave / QR</button></div>
+             </div>
+           </div>
+         </div>
+       </fieldset>
+       <div class="btns">
+         <button type="button" class="primary" id="btnNU">Crear usuario</button>
+         <button type="button" id="btnHideNU">Cancelar</button>
+       </div>
+     </fieldset>
+     <div class="err" id="dlgErr"></div>
+    </div>`,
+    `<button type="button" data-close>Cerrar</button>`);
+
+  const err = m => $("#dlgErr").textContent = m || "";
+  const upd = async (name, body, reopen=true) => {
+    try { const r = await post("/api/users", {action:"update", name, ...body}); toast(r.msg); if (reopen) usersDialog(); refresh(); }
+    catch(e){ err(e.message); if (reopen) setTimeout(usersDialog, 1500); }
+  };
+  const body = $("#dlgBody");
+
+  body.querySelectorAll("tr[data-user]").forEach(tr=>{
+    const name = tr.dataset.user;
+    const u = d.users.find(x => x.name === name);
+    tr.querySelector("[data-uen]").onchange = e => {
+      if (!e.target.checked && !confirm(`¿Deshabilitar a ${name}? No va a poder entrar y se apagan sus VPN personales.`)) { e.target.checked = true; return; }
+      upd(name, {enabled: e.target.checked});
+    };
+    tr.querySelector("[data-uedit]").onclick = () => editUserDialog(u, d.general_vpns);
+    tr.querySelector("[data-upw]").onclick = async () => {
+      const pw = prompt(`Nueva contraseña para ${name} (mínimo 8 caracteres):`); if (!pw) return;
+      try { toast((await post("/api/users", {action:"passwd", name, password:pw})).msg); } catch(e){ err(e.message); }
+    };
+    const del = tr.querySelector("[data-udel]");
+    if (del) del.onclick = async () => {
+      const n = u?.personal || 0;
+      if (prompt(`Eliminar a ${name}${n?` y sus ${n} VPN personales`:""}. No se puede deshacer.\nEscribí el nombre del usuario para confirmar:`) !== name) return;
+      try { toast((await post("/api/users", {action:"delete", name})).msg); usersDialog(); refresh(); } catch(e){ err(e.message); }
+    };
+  });
+
+  const nuRole = $("#dlgForm").elements.nu_role;
+  const nuAdminHint = $("#nu_admin_hint");
+  const nuAccessFields = $("#nu_access_fields");
+  const nuAll = $("#dlgForm").elements.nu_all;
+  const nuVpnList = $("#nu_vpn_list");
+  const nuExpire = $("#dlgForm").elements.nu_expire;
+  const nuExpireBox = $("#nu_expire_box");
+  const nuExpireDate = $("#dlgForm").elements.nu_expire_date;
+  const nu2fa = $("#dlgForm").elements.nu_2fa;
+  const nuDuoBox = $("#nu_duo_box");
+  const nuTotpBox = $("#nu_totp_box");
+  const nuTotpQr = $("#nu_totp_qr");
+  const nuTotpKey = $("#nu_totp_key");
+  const nuTotpSecret = $("#dlgForm").elements.nu_totp_secret;
+
+  async function genNuTotp(){
+    const name = $("#dlgForm").elements.nu_name.value.trim() || "nuevo";
+    try {
+      const res = await api(`/api/totp/setup?user=${encodeURIComponent(name)}`);
+      nuTotpSecret.value = res.secret;
+      nuTotpKey.textContent = res.secret;
+      nuTotpQr.src = res.qr;
+      nuTotpQr.style.display = "block";
+    } catch(e){ err("Error generando TOTP: " + e.message); }
+  }
+
+  if (nuRole) {
+    nuRole.onchange = () => {
+      const isAdmin = nuRole.value === "admin";
+      nuAdminHint.style.display = isAdmin ? "" : "none";
+      nuAccessFields.style.display = isAdmin ? "none" : "";
+    };
+  }
+  if (nuAll) {
+    nuAll.onchange = () => {
+      nuVpnList.style.display = nuAll.checked ? "none" : "grid";
+    };
+  }
+  if (nuExpire) {
+    nuExpire.onchange = () => {
+      if (nuExpire.checked) {
+        nuExpireBox.style.display = "flex";
+        if (!nuExpireDate.value) nuExpireDate.value = in30DaysStr();
+      } else {
+        nuExpireBox.style.display = "none";
+      }
+    };
+  }
+  if (nu2fa) {
+    nu2fa.onchange = () => {
+      if (nu2fa.value === "totp") {
+        nuTotpBox.style.display = "block";
+        nuDuoBox.style.display = "none";
+        if (!nuTotpSecret.value) genNuTotp();
+      } else if (nu2fa.value === "duo") {
+        nuTotpBox.style.display = "none";
+        nuDuoBox.style.display = "block";
+      } else {
+        nuTotpBox.style.display = "none";
+        nuDuoBox.style.display = "none";
+      }
+    };
+    $("#btnGenNuTotp").onclick = genNuTotp;
+  }
+
+  $("#btnDuoSettings").onclick = duoConfigDialog;
+  $("#btnShowNU").onclick = () => { $("#nuBox").hidden = false; $("#btnShowNU").hidden = true; $("#btnDuoSettings").hidden = true; $("#dlgForm").elements.nu_name.focus(); };
+  $("#btnHideNU").onclick = () => { $("#nuBox").hidden = true; $("#btnShowNU").hidden = false; $("#btnDuoSettings").hidden = false; err(""); };
+  $("#btnNU").onclick = async () => {
+    const f = $("#dlgForm").elements;
+    err("");
+    const name = f.nu_name.value.trim();
+    const pw = f.nu_pass.value;
+    const role = f.nu_role.value;
+    let access = "*";
+    if (role !== "admin") {
+      if (f.nu_all.checked) {
+        access = "*";
+      } else {
+        access = [...$("#dlgForm").querySelectorAll("input[name='nu_vpn']:checked")].map(x=>x.value);
+      }
+    }
+    const expires = f.nu_expire.checked ? f.nu_expire_date.value : null;
+    const metodo_2fa = f.nu_2fa.value;
+    const totp_secret = f.nu_totp_secret.value;
+    const duo_username = f.nu_duo_user.value.trim();
+    const comment = f.nu_comment.value.trim();
+
+    $("#btnNU").disabled = true;
+    try {
+      const r = await post("/api/users", {action:"create", name, password:pw, role, access, expires, metodo_2fa, totp_secret, duo_username, comment});
+      toast(r.msg); usersDialog();
+    } catch(e){ err(e.message); $("#btnNU").disabled = false; }
+  };
+}
+
+function editUserDialog(u, generalVpns){
+  const all = u.access === "*";
+  const list = all ? [] : (u.access || []);
+  const form = openDialog(`Editar usuario · ${u.name}`,
+    `<div style="display:flex;flex-direction:column;gap:14px">
+       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+         <label class="fl">Usuario<input value="${esc(u.name)}" disabled></label>
+         <label class="fl">Rol<select name="eu_role">
+           <option value="user" ${u.role!=="admin"?"selected":""}>usuario</option>
+           <option value="admin" ${u.role==="admin"?"selected":""}>admin</option>
+         </select></label>
+         <label class="fl chk" style="align-self:center;margin-top:16px">
+           <input type="checkbox" name="eu_enabled" ${u.enabled?"checked":""} ${u.name===ME.name?"disabled":""}>
+           Usuario habilitado
+         </label>
+       </div>
+       <label class="fl">Comentario / Nota
+         <input name="eu_comment" value="${esc(u.comment||'')}" placeholder="ej. Administrador de red, guardia técnica, etc.">
+       </label>
+
+       <fieldset class="full" style="display:flex;flex-direction:column;gap:8px">
+         <legend>Acceso a VPN generales</legend>
+         <div id="eu_admin_hint" class="hint" style="${u.role==='admin'?'':'display:none'}">Los administradores tienen acceso a todas las VPN generales automáticamente.</div>
+         <div id="eu_access_fields" style="${u.role==='admin'?'display:none':''}">
+           <label class="fl chk" style="margin-bottom:8px">
+             <input type="checkbox" name="eu_all" ${all?"checked":""}> Acceso a todas las VPN generales
+           </label>
+           <div id="eu_vpn_list" class="vpn-access-grid" style="display:${all?'none':'grid'}">
+             ${generalVpns.map(v=>`
+               <label class="vpn-access-item" title="${esc(v.name)} (${esc(v.label||'')})">
+                 <input type="checkbox" name="eu_vpn" value="${esc(v.name)}" ${list.includes(v.name)?"checked":""}>
+                 <span class="vpn-access-name"><b>${esc(v.name)}</b> <span class="hint" style="font-size:11px">${esc(v.label||"")}</span></span>
+               </label>
+             `).join("") || '<span class="hint">No hay VPN generales configuradas</span>'}
+            </div>
+         </div>
+       </fieldset>
+
+       <fieldset class="full" style="display:flex;flex-direction:column;gap:8px">
+         <legend>Vencimiento de la cuenta</legend>
+         <label class="fl chk">
+           <input type="checkbox" name="eu_expire" ${u.expires?'checked':''}> Expire (definir fecha de vencimiento)
+         </label>
+         <div id="eu_expire_box" style="display:${u.expires?'flex':'none'};flex-direction:column;gap:4px">
+           <label class="fl" style="max-width:240px">Fecha de vencimiento
+             <input type="date" name="eu_expire_date" value="${tsToDateStr(u.expires) || in30DaysStr()}">
+           </label>
+           <span class="hint">Por defecto 30 días a partir de hoy. Vence al finalizar el día seleccionado.</span>
+         </div>
+       </fieldset>
+
+       <fieldset class="full" style="display:flex;flex-direction:column;gap:8px">
+         <legend>Autenticación de dos factores (2FA)</legend>
+         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+           <label class="fl">Método 2FA
+             <select name="eu_2fa">
+               <option value="ninguno" ${(!u.doble_factor || u.metodo_2fa==='ninguno')?'selected':''}>Desactivado</option>
+               <option value="totp" ${u.metodo_2fa==='totp'?'selected':''}>Google Authenticator (TOTP)</option>
+               <option value="duo" ${u.metodo_2fa==='duo'?'selected':''}>Cisco Duo</option>
+             </select>
+           </label>
+           <div id="eu_duo_box" style="display:${u.metodo_2fa==='duo'?'block':'none'}">
+             <label class="fl">Usuario en Cisco Duo (opcional)
+               <input name="eu_duo_user" value="${esc(u.duo_username||'')}" placeholder="Dejar vacío para usar el mismo">
+             </label>
+             <span class="hint">Usuario registrado en la consola de Duo.</span>
+           </div>
+         </div>
+         <div id="eu_totp_box" style="display:${u.metodo_2fa==='totp'?'block':'none'};background:var(--code);padding:12px;border-radius:8px">
+           <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+             <img id="eu_totp_qr" src="" style="width:130px;height:130px;background:#fff;padding:4px;border-radius:6px;display:none" alt="QR">
+             <div style="display:flex;flex-direction:column;gap:6px">
+               <b>${u.has_totp ? 'Authenticator configurado' : 'Configurar Google Authenticator'}</b>
+               <span class="hint">${u.has_totp ? 'Podés regenerar la clave para escanear en otro dispositivo.' : 'Escaneá con Google Authenticator o Microsoft Authenticator.'}</span>
+               <div style="font-family:monospace;font-size:12px;background:var(--bg);padding:4px 8px;border-radius:4px;display:none;word-break:break-all" id="eu_totp_key"></div>
+               <input type="hidden" name="eu_totp_secret">
+               <div><button type="button" class="mini" id="btnGenEuTotp">${u.has_totp ? 'Regenerar clave / QR' : 'Generar clave / QR'}</button></div>
+             </div>
+           </div>
+         </div>
+       </fieldset>
+
+       <fieldset class="full" style="display:flex;flex-direction:column;gap:8px">
+         <legend>Acceso remoto (WireGuard Road Warrior)</legend>
+         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+           <div>
+             <div style="font-size:13px;font-weight:600">Perfil de conexión WireGuard para ${esc(u.name)}</div>
+             <div class="hint">Descargá el archivo .conf para importar en el cliente oficial WireGuard (Windows, Mac, Linux, móvil).</div>
+           </div>
+           <button type="button" class="btn-wg-dl" data-dl-wg="/api/users/${esc(u.name)}/wireguard" data-dl-name="vpnhub-${esc(u.name)}.conf" style="padding:7px 14px;font-size:13px;gap:6px" title="Descargar archivo .conf de WireGuard para ${esc(u.name)}">
+             <svg viewBox="0 0 24 24" width="16" height="16" fill="#88171a"><path d="M23.98 11.645S24.533 0 11.735 0C.418 0 .064 11.17.064 11.17S-1.6 24 11.997 24C25.04 24 23.98 11.645 23.98 11.645zM8.155 7.576c2.4-1.47 5.469-.571 6.618 1.638.218.419.246 1.063.108 1.503-.477 1.516-1.601 2.366-3.145 2.728.455-.39.817-.832.933-1.442a2.112 2.112 0 0 0-.364-1.677 2.14 2.14 0 0 0-2.465-.75c-.95.36-1.47 1.228-1.377 2.294.087.99.839 1.632 2.245 1.876-.21.111-.372.193-.53.281a5.113 5.113 0 0 0-1.644 1.43c-.143.192-.24.208-.458.075-2.827-1.729-3.009-6.067.078-7.956zM6.04 18.258c-.455.116-.895.286-1.359.438.227-1.532 2.021-2.943 3.539-2.782a3.91 3.91 0 0 0-.74 2.072c-.504.093-.98.155-1.44.272zM15.703 3.3c.448.017.898.01 1.347.02a2.324 2.324 0 0 1 .334.047 3.249 3.249 0 0 1-.34.434c-.16.15-.341.296-.573.069-.055-.055-.187-.042-.283-.044-.447-.005-.894-.02-1.34-.003a8.323 8.323 0 0 0-1.154.118c-.072.013-.178.25-.146.338.078.207.191.435.359.567.619.49 1.277.928 1.9 1.413.604.472 1.167.99 1.51 1.7.446.928.46 1.9.267 2.877-.322 1.63-1.147 2.98-2.483 3.962-.538.395-1.205.62-1.821.903-.543.25-1.1.465-1.644.712-.98.446-1.53 1.51-1.369 2.615.149 1.015 1.04 1.862 2.059 2.037 1.223.21 2.486-.586 2.785-1.83.336-1.397-.423-2.646-1.845-3.024l-.256-.066c.38-.17.708-.291 1.012-.458q.793-.437 1.558-.925c.15-.096.231-.096.36.014.977.846 1.56 1.898 1.724 3.187.27 2.135-.74 4.096-2.646 5.101-2.948 1.555-6.557-.215-7.208-3.484-.558-2.8 1.418-5.34 3.797-5.83 1.023-.211 1.958-.637 2.685-1.425.47-.508.697-.944.775-1.141a3.165 3.165 0 0 0 .217-1.158 2.71 2.71 0 0 0-.237-.992c-.248-.566-1.2-1.466-1.435-1.656l-2.24-1.754c-.079-.065-.168-.06-.36-.047-.23.016-.815.048-1.067-.018.204-.155.76-.38 1-.56-.726-.49-1.554-.314-2.315-.46.176-.328 1.046-.831 1.541-.888a7.323 7.323 0 0 0-.135-.822c-.03-.111-.154-.22-.263-.283-.262-.154-.541-.281-.843-.434a1.755 1.755 0 0 1 .906-.28 3.385 3.385 0 0 1 .908.088c.54.123.97.042 1.399-.324-.338-.136-.676-.26-1.003-.407a9.843 9.843 0 0 1-.942-.493c.85.118 1.671.437 2.54.32l.022-.118-2.018-.47c1.203-.11 2.323-.128 3.384.388.299.146.61.266.897.432.14.08.233.24.348.365.09.098.164.23.276.29.424.225.89.234 1.366.223l.01-.16c.479.15 1.017.702 1.017 1.105-.776 0-1.55-.003-2.325.004-.083 0-.165.061-.247.094.078.046.155.128.235.131z"/></svg>
+             <span>Descargar perfil WireGuard (.conf)</span>
+           </button>
+         </div>
+       </fieldset>
+
+       <div class="err" id="dlgErr"></div>
+     </div>`,
+    `<button type="button" id="btnCancelEdit">← Volver</button>
+     <button type="button" class="primary" id="btnSaveEdit">Guardar cambios</button>`);
+
+  const err = m => $("#dlgErr").textContent = m || "";
+  const roleSel = form.elements["eu_role"];
+  const adminHint = $("#eu_admin_hint");
+  const accessFields = $("#eu_access_fields");
+  const allChk = form.elements["eu_all"];
+  const vpnList = $("#eu_vpn_list");
+  const expireChk = form.elements["eu_expire"];
+  const expireBox = $("#eu_expire_box");
+  const expireDate = form.elements["eu_expire_date"];
+  const eu2fa = form.elements["eu_2fa"];
+  const euDuoBox = $("#eu_duo_box");
+  const euTotpBox = $("#eu_totp_box");
+  const euTotpQr = $("#eu_totp_qr");
+  const euTotpKey = $("#eu_totp_key");
+  const euTotpSecret = form.elements["eu_totp_secret"];
+
+  async function genEuTotp(){
+    try {
+      const res = await api(`/api/totp/setup?user=${encodeURIComponent(u.name)}`);
+      euTotpSecret.value = res.secret;
+      euTotpKey.textContent = res.secret;
+      euTotpKey.style.display = "block";
+      euTotpQr.src = res.qr;
+      euTotpQr.style.display = "block";
+    } catch(e){ err("Error generando TOTP: " + e.message); }
+  }
+
+  roleSel.onchange = () => {
+    const isAdmin = roleSel.value === "admin";
+    adminHint.style.display = isAdmin ? "" : "none";
+    accessFields.style.display = isAdmin ? "none" : "";
+  };
+
+  allChk.onchange = () => {
+    vpnList.style.display = allChk.checked ? "none" : "grid";
+  };
+
+  expireChk.onchange = () => {
+    if (expireChk.checked) {
+      expireBox.style.display = "flex";
+      if (!expireDate.value) expireDate.value = in30DaysStr();
+    } else {
+      expireBox.style.display = "none";
+    }
+  };
+
+  eu2fa.onchange = () => {
+    if (eu2fa.value === "totp") {
+      euTotpBox.style.display = "block";
+      euDuoBox.style.display = "none";
+      if (!u.has_totp && !euTotpSecret.value) genEuTotp();
+    } else if (eu2fa.value === "duo") {
+      euTotpBox.style.display = "none";
+      euDuoBox.style.display = "block";
+    } else {
+      euTotpBox.style.display = "none";
+      euDuoBox.style.display = "none";
+    }
+  };
+  $("#btnGenEuTotp").onclick = genEuTotp;
+
+  $("#btnCancelEdit").onclick = usersDialog;
+
+  $("#btnSaveEdit").onclick = async () => {
+    err("");
+    const role = roleSel.value;
+    const enabled = form.elements["eu_enabled"].checked;
+    let access = "*";
+    if (role !== "admin") {
+      if (allChk.checked) {
+        access = "*";
+      } else {
+        access = [...form.querySelectorAll("input[name='eu_vpn']:checked")].map(x=>x.value);
+      }
+    }
+    const expires = expireChk.checked ? expireDate.value : null;
+    const metodo_2fa = eu2fa.value;
+    const totp_secret = euTotpSecret.value || undefined;
+    const duo_username = form.elements["eu_duo_user"].value.trim();
+    const comment = form.elements["eu_comment"].value.trim();
+
+    $("#btnSaveEdit").disabled = true;
+    try {
+      const r = await post("/api/users", {
+        action: "update",
+        name: u.name,
+        role,
+        enabled,
+        access,
+        expires,
+        metodo_2fa,
+        totp_secret,
+        duo_username,
+        comment
+      });
+      toast(r.msg);
+      usersDialog();
+      refresh();
+    } catch(e) {
+      err(e.message);
+      $("#btnSaveEdit").disabled = false;
+    }
+  };
+}
+
+async function duoConfigDialog(){
+  let cfg = {};
+  try { cfg = await api("/api/duo/config"); } catch(e){ return toast(e.message); }
+  const form = openDialog("Configuración global de Cisco Duo",
+    `<div style="display:flex;flex-direction:column;gap:12px">
+       <span class="hint">Credenciales de la aplicación <b>Auth API</b> en la consola de Cisco Duo (Applications → Protect an Application → Auth API).</span>
+       <label class="fl">Integration Key (IKEY)
+         <input name="duo_ikey" value="${esc(cfg.ikey||'')}" placeholder="DI..." autocomplete="off">
+       </label>
+       <label class="fl">Secret Key (SKEY)
+         <input name="duo_skey" type="password" value="${esc(cfg.skey||'')}" placeholder="${cfg.configured?'(sin cambios)':''}" autocomplete="new-password">
+       </label>
+       <label class="fl">API Host
+         <input name="duo_host" value="${esc(cfg.host||'')}" placeholder="api-XXXXXXXX.duosecurity.com" autocomplete="off">
+       </label>
+       <div class="err" id="dlgErr"></div>
+       <div id="duoStatus" style="font-size:13px"></div>
+     </div>`,
+    `<button type="button" data-close>Cancelar</button>
+     <button type="button" id="btnTestDuo">Probar conexión</button>
+     <button type="button" class="primary" id="btnSaveDuo">Guardar</button>`);
+
+  const err = m => $("#dlgErr").textContent = m || "";
+  const st = $("#duoStatus");
+
+  $("#btnTestDuo").onclick = async () => {
+    err(""); st.innerHTML = '<span class="hint">Probando conexión con Cisco Duo...</span>';
+    const ikey = form.elements["duo_ikey"].value.trim();
+    const skey = form.elements["duo_skey"].value.trim();
+    const host = form.elements["duo_host"].value.trim();
+    try {
+      const r = await post("/api/duo/test", {ikey, skey, host});
+      st.innerHTML = `<span class="badge ok">✓ ${esc(r.msg)}</span>`;
+    } catch(e){
+      st.innerHTML = `<span class="badge bad">✗ Error: ${esc(e.message)}</span>`;
+    }
+  };
+
+  $("#btnSaveDuo").onclick = async () => {
+    err("");
+    const ikey = form.elements["duo_ikey"].value.trim();
+    const skey = form.elements["duo_skey"].value.trim();
+    const host = form.elements["duo_host"].value.trim();
+    try {
+      const r = await post("/api/duo/config", {ikey, skey, host});
+      toast(r.msg);
+      dlg.close();
+      usersDialog();
+    } catch(e){ err(e.message); }
+  };
+}
+
+async function logsDialog(){
+  const form = openDialog("Registros de auditoría y eventos",
+    `<div style="display:flex;flex-direction:column;gap:12px">
+       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+         <select id="logCat" style="padding:6px 10px;font-size:13px">
+           <option value="">Todas las categorías</option>
+           <option value="auth">🔐 Inicios de sesión & 2FA</option>
+           <option value="user">👤 Usuarios</option>
+           <option value="vpn">🌐 VPNs & Túneles</option>
+           <option value="net">🔀 Redes</option>
+           <option value="system">⚙️ Sistema & Caídas</option>
+         </select>
+         <input id="logSearch" placeholder="Buscar por usuario, IP, texto..." style="flex:1;min-width:200px;font-size:13px;padding:6px 10px" autocomplete="off">
+         <button type="button" class="mini" id="btnRefreshLogs">↻ Actualizar</button>
+         <button type="button" class="mini" id="btnExportLogs">⬇ Exportar</button>
+       </div>
+       <div id="logsTableBox" style="max-height:55vh;overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:8px">
+         <div class="empty">Cargando registros…</div>
+       </div>
+       <div id="logsCount" class="hint" style="text-align:right"></div>
+       <div class="err" id="dlgErr"></div>
+     </div>`,
+    `<button type="button" data-close>Cerrar</button>`);
+
+  const catSel = $("#logCat");
+  const searchInp = $("#logSearch");
+  const tableBox = $("#logsTableBox");
+  const countSpan = $("#logsCount");
+  let currentLogs = [];
+
+  function catBadge(cat, lvl){
+    const cls = lvl === "error" ? "bad" : (lvl === "warn" ? "warn" : "ok");
+    const icons = { auth: "🔐 Auth", user: "👤 Usuario", vpn: "🌐 VPN", net: "🔀 Red", system: "⚙️ Sistema" };
+    return `<span class="badge ${cls}">${icons[cat] || cat}</span>`;
+  }
+
+  function fmtLogTime(iso){
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleString("es-AR", {dateStyle:"short", timeStyle:"medium"});
+  }
+
+  async function loadLogs(){
+    tableBox.innerHTML = '<div class="empty">Cargando…</div>';
+    const cat = catSel.value;
+    const q = searchInp.value.trim();
+    try {
+      const r = await api(`/api/logs?cat=${encodeURIComponent(cat)}&q=${encodeURIComponent(q)}&limit=300`);
+      currentLogs = r.logs || [];
+      countSpan.textContent = `Mostrando ${currentLogs.length} eventos`;
+      if (!currentLogs.length) {
+        tableBox.innerHTML = '<div class="empty">No hay eventos que coincidan con el filtro</div>';
+        return;
+      }
+      const rows = currentLogs.map(l => {
+        const hasDetail = l.detail && Object.keys(l.detail).length > 0;
+        const detStr = hasDetail ? esc(JSON.stringify(l.detail, null, 2)) : "";
+        return `<tr>
+          <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${fmtLogTime(l.time)}</td>
+          <td>${catBadge(l.cat, l.level)}</td>
+          <td style="white-space:nowrap;font-size:12px"><b>${esc(l.user || "-")}</b>${l.ip && l.ip!=="-" ? ` <span class="hint">(${esc(l.ip)})</span>` : ""}</td>
+          <td style="font-size:13px">
+            <div>${esc(l.msg)}</div>
+            ${hasDetail ? `<details style="margin-top:4px"><summary style="font-size:11px">Detalles</summary><pre class="log" style="font-size:11px;max-height:100px;margin-top:2px">${detStr}</pre></details>` : ""}
+          </td>
+        </tr>`;
+      }).join("");
+
+      tableBox.innerHTML = `<table style="font-size:12.5px;width:100%;min-width:540px;border-collapse:collapse">
+        <thead><tr style="position:sticky;top:0;background:var(--card);z-index:2"><th>Hora</th><th>Tipo</th><th>Usuario / IP</th><th>Evento</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    } catch(e){
+      tableBox.innerHTML = `<div class="err" style="padding:20px">${esc(e.message)}</div>`;
+    }
+  }
+
+  catSel.onchange = loadLogs;
+  let searchTimer;
+  searchInp.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadLogs, 350); };
+  $("#btnRefreshLogs").onclick = loadLogs;
+  $("#btnExportLogs").onclick = () => {
+    if (!currentLogs.length) return toast("No hay registros para exportar");
+    const jsonl = currentLogs.map(x => JSON.stringify(x)).join("\n");
+    const blob = new Blob([jsonl], {type: "application/x-ndjson"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vpnhub-audit-${new Date().toISOString().slice(0,10)}.jsonl`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("Archivo de logs exportado");
+  };
+
+  loadLogs();
+}
+
+/* ---------------- Auditoría y Estadísticas de Tráfico ---------------- */
+let LAN_DEVICES = {};
+const VPN_PALETTE = [
+  "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ec4899", 
+  "#06b6d4", "#f97316", "#14b8a6", "#6366f1", "#84cc16"
+];
+function vpnColor(name){
+  if (!name) return "#64748b";
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
+  return VPN_PALETTE[Math.abs(h) % VPN_PALETTE.length];
+}
+
+function fmtDur(sec){
+  if (sec == null || sec < 0) return "-";
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return `${m}m ${s}s`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return `${h}h ${remM}m`;
+}
+
+async function trafficDialog(){
+  openDialog("Auditoría y Estadísticas de Tráfico",
+    `<div id="trafficBox" style="display:flex;flex-direction:column;gap:14px">
+       <div class="row traffic-top-row" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+         <div class="traffic-pills">
+           <button type="button" class="traffic-pill active" data-tr-range="today">Hoy</button>
+           <button type="button" class="traffic-pill" data-tr-range="yesterday">Ayer</button>
+           <button type="button" class="traffic-pill" data-tr-range="week">7 días</button>
+           <button type="button" class="traffic-pill" data-tr-range="month">30 días</button>
+         </div>
+         <div class="row traffic-filters" style="align-items:center;gap:6px;flex-wrap:wrap">
+           <input type="date" id="trCustomDate" title="Elegir fecha específica" style="font-size:12px;padding:3px 6px;border-radius:6px;background:var(--code);border:1px solid var(--line);color:var(--fg)">
+           <select id="trVpnFilter" style="font-size:12px;padding:4px 8px;border-radius:6px;background:var(--code);border:1px solid var(--line);color:var(--fg)">
+             <option value="">Todas las VPNs</option>
+           </select>
+           <select id="trUserFilter" style="font-size:12px;padding:4px 8px;border-radius:6px;background:var(--code);border:1px solid var(--line);color:var(--fg)">
+             <option value="">Todos los usuarios</option>
+           </select>
+           <input type="text" id="trSearch" placeholder="Filtrar IP, puerto, servicio..." style="font-size:12px;padding:4px 8px;border-radius:6px;background:var(--code);border:1px solid var(--line);color:var(--fg);width:170px">
+           <div class="traffic-action-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+             <button type="button" id="trBtnLive" class="tag" style="cursor:pointer;padding:4px 8px;border-radius:6px" title="Ver sólo conexiones activas ahora">🔴 En vivo</button>
+             <button type="button" id="trBtnExport" class="tag" style="cursor:pointer;padding:4px 8px;border-radius:6px" title="Descargar reporte en formato CSV">📥 CSV</button>
+             <button type="button" id="trBtnDevices" class="tag" style="cursor:pointer;padding:4px 8px;border-radius:6px" title="Asignar nombres amigables a IPs de la LAN">💻 Nombres LAN</button>
+             <button type="button" id="trBtnRefresh" class="tag" style="cursor:pointer;padding:4px 8px;border-radius:6px" title="Recargar estadísticas">🔄</button>
+           </div>
+         </div>
+       </div>
+
+       <div class="traffic-kpi-grid">
+         <div class="traffic-kpi-card">
+           <span class="traffic-kpi-sub">Tiempo conectado</span>
+           <span class="traffic-kpi-val" id="trKpiTime">-</span>
+           <span class="traffic-kpi-sub" id="trKpiTimeSub">Total acumulado</span>
+         </div>
+         <div class="traffic-kpi-card">
+           <span class="traffic-kpi-sub">Sesiones de usuario</span>
+           <span class="traffic-kpi-val" id="trKpiSessions">-</span>
+           <span class="traffic-kpi-sub" id="trKpiSessionsSub">Conexiones auditadas</span>
+         </div>
+         <div class="traffic-kpi-card">
+           <span class="traffic-kpi-sub">Tráfico total</span>
+           <span class="traffic-kpi-val" id="trKpiTraffic">-</span>
+           <span class="traffic-kpi-sub" id="trKpiTrafficSub">↑ 0 B · ↓ 0 B</span>
+         </div>
+         <div class="traffic-kpi-card">
+           <span class="traffic-kpi-sub">Sesiones activas ahora</span>
+           <span class="traffic-kpi-val" id="trKpiActive" style="color:var(--good)">0</span>
+           <span class="traffic-kpi-sub">Conexiones en curso</span>
+         </div>
+       </div>
+
+       <div class="traffic-timeline" id="trTimelineWrap">
+         <div style="display:flex;justify-content:space-between;align-items:center">
+           <span style="font-size:12px;font-weight:600;color:var(--fg)">Distribución de sesiones en el día (00:00 - 23:59)</span>
+           <span style="font-size:11px;color:var(--muted)" id="trTlLegend">Pasa el cursor sobre una barra para ver detalles</span>
+         </div>
+         <div class="traffic-tl-track" id="trTlTrack"></div>
+         <div class="traffic-tl-hours">
+           <span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>23:59</span>
+         </div>
+       </div>
+
+       <div class="traffic-bars-grid">
+         <div style="background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px">
+           <div style="font-size:12px;font-weight:600;margin-bottom:8px">Top VPNs más utilizadas</div>
+           <div id="trBarsVpn"></div>
+         </div>
+         <div style="background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px">
+           <div style="font-size:12px;font-weight:600;margin-bottom:8px">Top Usuarios / Equipos</div>
+           <div id="trBarsUser"></div>
+         </div>
+       </div>
+
+       <div style="background:var(--code);border:1px solid var(--line);border-radius:8px;overflow:hidden">
+         <div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600">
+           <span>Detalle de Sesiones</span>
+           <span id="trTableCount" style="color:var(--muted);font-weight:400">0 sesiones</span>
+         </div>
+         <div class="tr-table-wrap" style="max-height:340px;overflow:auto;-webkit-overflow-scrolling:touch">
+           <table style="width:100%;min-width:640px;border-collapse:collapse;font-size:12px">
+             <thead>
+               <tr style="background:rgba(255,255,255,.02);border-bottom:1px solid var(--line);text-align:left">
+                 <th style="padding:8px 10px;width:30px"></th>
+                 <th style="padding:8px 10px">Usuario / Origen</th>
+                 <th style="padding:8px 10px">VPN</th>
+                 <th style="padding:8px 10px">Destino</th>
+                 <th style="padding:8px 10px">Servicio</th>
+                 <th style="padding:8px 10px">Inicio</th>
+                 <th style="padding:8px 10px">Fin</th>
+                 <th style="padding:8px 10px">Duración</th>
+                 <th style="padding:8px 10px;text-align:right">Tráfico</th>
+               </tr>
+             </thead>
+             <tbody id="trTableBody"></tbody>
+           </table>
+         </div>
+       </div>
+       <div class="err" id="trErr"></div>
+     </div>`,
+    `<button type="button" data-close>Cerrar</button>`);
+
+  let currentRange = "today";
+  let onlyLive = false;
+  let allSessions = [];
+  const knownUsers = new Set();
+  const userSelect = $("#trUserFilter");
+
+  try {
+    const [devRes, usersRes] = await Promise.all([
+      api("/api/traffic/devices"),
+      api("/api/users")
+    ]);
+    LAN_DEVICES = devRes.devices || {};
+    (usersRes.users || []).forEach(u => {
+      if (u.name) knownUsers.add(u.name);
+    });
+  } catch(e){}
+
+  knownUsers.forEach(u => {
+    const opt = document.createElement("option");
+    opt.value = u;
+    opt.textContent = LAN_DEVICES[u] ? `${u} (${LAN_DEVICES[u]})` : u;
+    userSelect.appendChild(opt);
+  });
+
+  // Llenar select de VPNs
+  const vpnSelect = $("#trVpnFilter");
+  (data || []).forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.name;
+    opt.textContent = c.name + (c.scope === "personal" ? ` (🔒 ${c.owner})` : "");
+    vpnSelect.appendChild(opt);
+  });
+
+  async function loadTrafficData(){
+    const dateVal = $("#trCustomDate").value;
+    const vpnVal = $("#trVpnFilter").value;
+    const userVal = $("#trUserFilter").value;
+
+    let rangeParam = currentRange;
+    if (dateVal) rangeParam = dateVal;
+
+    const qs = new URLSearchParams();
+    if (rangeParam) qs.set("range", rangeParam);
+    if (vpnVal) qs.set("vpn", vpnVal);
+    if (userVal) qs.set("user", userVal);
+
+    try {
+      $("#trErr").textContent = "";
+      if (onlyLive) {
+        const liveRes = await api("/api/traffic/live");
+        const liveSessions = liveRes.sessions || liveRes.live || [];
+        renderTraffic({
+          summary: {
+            total_sessions: liveRes.active_count || liveSessions.length,
+            active_sessions: liveRes.active_count || liveSessions.length,
+            total_duration_sec: liveSessions.reduce((a, s) => a + (s.duration_sec || 0), 0),
+            total_bytes_sent: liveSessions.reduce((a, s) => a + (s.bytes_sent || 0), 0),
+            total_bytes_recv: liveSessions.reduce((a, s) => a + (s.bytes_recv || 0), 0),
+            by_vpn: {},
+            by_user: {}
+          },
+          sessions: liveSessions
+        });
+        return;
+      }
+
+      const [sumRes, sessRes] = await Promise.all([
+        api(`/api/traffic/summary?${qs.toString()}`),
+        api(`/api/traffic/sessions?${qs.toString()}&limit=500`)
+      ]);
+
+      renderTraffic({
+        summary: sumRes.summary || sumRes,
+        sessions: sessRes.sessions || []
+      });
+    } catch(err) {
+      console.error(err);
+      $("#trErr").textContent = "Error al cargar tráfico: " + err.message;
+    }
+  }
+
+  function renderTraffic(d){
+    const s = d.summary || {};
+    allSessions = d.sessions || [];
+
+    // Agregar usuarios encontrados en sesiones que no estuvieran en userSelect
+    allSessions.forEach(x => {
+      if (x.user && !knownUsers.has(x.user)) {
+        knownUsers.add(x.user);
+        const opt = document.createElement("option");
+        opt.value = x.user;
+        opt.textContent = LAN_DEVICES[x.user] ? `${x.user} (${LAN_DEVICES[x.user]})` : x.user;
+        userSelect.appendChild(opt);
+      }
+    });
+
+    // KPIs
+    $("#trKpiTime").textContent = fmtDur(s.total_duration_sec || 0);
+    $("#trKpiSessions").textContent = (s.total_sessions || 0).toLocaleString();
+    const totBytes = (s.total_bytes_sent || 0) + (s.total_bytes_recv || 0);
+    $("#trKpiTraffic").textContent = fmtBytes(totBytes);
+    $("#trKpiTrafficSub").textContent = `↑ ${fmtBytes(s.total_bytes_sent||0)} · ↓ ${fmtBytes(s.total_bytes_recv||0)}`;
+    $("#trKpiActive").textContent = s.active_sessions || 0;
+
+    // Timeline (solo si el rango es un día: today, yesterday, o fecha específica)
+    const isSingleDay = ["today", "yesterday"].includes(currentRange) || !!$("#trCustomDate").value;
+    const tlWrap = $("#trTimelineWrap");
+    const tlTrack = $("#trTlTrack");
+    tlTrack.innerHTML = "";
+
+    if (isSingleDay) {
+      tlWrap.style.display = "flex";
+      allSessions.forEach(sess => {
+        const st = sess.start_time || "";
+        const parts = st.split("T")[1] || st.split(" ")[1] || "";
+        if (!parts) return;
+        const [h, m, sec] = parts.split(":").map(Number);
+        if (isNaN(h) || isNaN(m)) return;
+        const startMin = h * 60 + m;
+        const durMin = Math.max(2, Math.round((sess.duration_sec || 60) / 60));
+        const leftPct = (startMin / 1440) * 100;
+        const widthPct = Math.min(100 - leftPct, Math.max(0.4, (durMin / 1440) * 100));
+
+        const bar = document.createElement("div");
+        bar.className = "traffic-tl-bar";
+        bar.style.left = `${leftPct.toFixed(2)}%`;
+        bar.style.width = `${widthPct.toFixed(2)}%`;
+        bar.style.background = vpnColor(sess.vpn);
+        const devLabel = LAN_DEVICES[sess.user] ? ` (${LAN_DEVICES[sess.user]})` : "";
+        const titleStr = `${sess.user}${devLabel} → ${sess.vpn}\nDestino: ${sess.dst_ip}:${sess.dst_port} (${sess.service})\nHora: ${st.slice(11,19)} - ${sess.end_time ? sess.end_time.slice(11,19) : 'en curso'}\nDuración: ${fmtDur(sess.duration_sec)} | Tráfico: ${fmtBytes(sess.bytes_total)}`;
+        bar.title = titleStr;
+        bar.onclick = () => {
+          $("#trSearch").value = sess.user;
+          filterTable();
+        };
+        tlTrack.appendChild(bar);
+      });
+    } else {
+      tlWrap.style.display = "none";
+    }
+
+    // Top VPNs
+    const vpnBox = $("#trBarsVpn");
+    vpnBox.innerHTML = "";
+    const vpnEntries = Object.entries(s.by_vpn || {}).sort((a,b) => b[1].bytes - a[1].bytes);
+    const maxVpnBytes = vpnEntries.length ? vpnEntries[0][1].bytes : 1;
+    vpnEntries.slice(0, 5).forEach(([vName, vData]) => {
+      const pct = Math.max(4, Math.round((vData.bytes / (maxVpnBytes || 1)) * 100));
+      const row = document.createElement("div");
+      row.className = "traffic-bar-row";
+      row.innerHTML = `
+        <span class="traffic-bar-label" title="${esc(vName)}">${esc(vName)}</span>
+        <div class="traffic-bar-track">
+          <div class="traffic-bar-fill" style="width:${pct}%;background:${vpnColor(vName)}"></div>
+        </div>
+        <span class="traffic-bar-val">${fmtBytes(vData.bytes)}</span>
+      `;
+      vpnBox.appendChild(row);
+    });
+    if (!vpnEntries.length) vpnBox.innerHTML = `<span class="hint" style="font-size:11px">Sin actividad en este rango</span>`;
+
+    // Top Users
+    const usrBox = $("#trBarsUser");
+    usrBox.innerHTML = "";
+    const usrEntries = Object.entries(s.by_user || {}).sort((a,b) => b[1].bytes - a[1].bytes);
+    const maxUsrBytes = usrEntries.length ? usrEntries[0][1].bytes : 1;
+    usrEntries.slice(0, 5).forEach(([uName, uData]) => {
+      const pct = Math.max(4, Math.round((uData.bytes / (maxUsrBytes || 1)) * 100));
+      const row = document.createElement("div");
+      row.className = "traffic-bar-row";
+      const devName = LAN_DEVICES[uName] ? `${uName} (${LAN_DEVICES[uName]})` : uName;
+      row.innerHTML = `
+        <span class="traffic-bar-label" title="${esc(devName)}">${esc(devName)}</span>
+        <div class="traffic-bar-track">
+          <div class="traffic-bar-fill" style="width:${pct}%;background:var(--accent)"></div>
+        </div>
+        <span class="traffic-bar-val">${fmtBytes(uData.bytes)}</span>
+      `;
+      usrBox.appendChild(row);
+    });
+    if (!usrEntries.length) usrBox.innerHTML = `<span class="hint" style="font-size:11px">Sin actividad en este rango</span>`;
+
+    filterTable();
+  }
+
+  function filterTable(){
+    const q = ($("#trSearch").value || "").trim().toLowerCase();
+    const tbody = $("#trTableBody");
+    tbody.innerHTML = "";
+
+    const filtered = allSessions.filter(x => {
+      if (!q) return true;
+      const dev = LAN_DEVICES[x.user] || "";
+      return (x.user && x.user.toLowerCase().includes(q)) ||
+             (dev && dev.toLowerCase().includes(q)) ||
+             (x.vpn && x.vpn.toLowerCase().includes(q)) ||
+             (x.dst_ip && x.dst_ip.includes(q)) ||
+             (x.service && x.service.toLowerCase().includes(q)) ||
+             (String(x.dst_port).includes(q));
+    });
+
+    $("#trTableCount").textContent = `${filtered.length} de ${allSessions.length} sesiones`;
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">No se encontraron sesiones para los filtros seleccionados</td></tr>`;
+      return;
+    }
+
+    filtered.forEach(x => {
+      const isAct = x.status === "active";
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid var(--line)";
+      if (isAct) tr.style.background = "rgba(16,185,129,.04)";
+
+      const devName = LAN_DEVICES[x.user];
+      const userDisplay = devName 
+        ? `<div style="font-weight:600">${esc(devName)}</div><div class="hint" style="font-size:10.5px">${esc(x.user)}</div>`
+        : `<span style="font-weight:600">${esc(x.user || '-')}</span>`;
+
+      const startTimeStr = x.start_time ? x.start_time.slice(0, 19).replace("T", " ") : "-";
+      const endTimeStr = isAct ? `<span style="color:var(--good);font-weight:600">En curso</span>` : (x.end_time ? x.end_time.slice(11, 19) : "-");
+
+      tr.innerHTML = `
+        <td style="padding:7px 10px;text-align:center">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isAct ? 'var(--good)' : 'var(--muted)'};${isAct ? 'box-shadow:0 0 6px var(--good)' : ''}" title="${isAct ? 'Sesión activa' : 'Finalizada'}"></span>
+        </td>
+        <td style="padding:7px 10px;cursor:pointer" title="Clic para renombrar dispositivo LAN" data-tr-dev="${esc(x.user)}">
+          ${userDisplay}
+        </td>
+        <td style="padding:7px 10px">
+          <span class="tag" style="border-left:3px solid ${vpnColor(x.vpn)};font-weight:600">${esc(x.vpn)}</span>
+        </td>
+        <td style="padding:7px 10px;font-family:monospace">${esc(x.dst_ip)}:${x.dst_port}</td>
+        <td style="padding:7px 10px">
+          <span class="tag" style="font-size:10.5px;padding:2px 6px">${esc(x.service || 'Otro')}</span>
+        </td>
+        <td style="padding:7px 10px;white-space:nowrap;font-size:11px">${startTimeStr}</td>
+        <td style="padding:7px 10px;white-space:nowrap;font-size:11px">${endTimeStr}</td>
+        <td style="padding:7px 10px;white-space:nowrap;font-weight:500">${fmtDur(x.duration_sec)}</td>
+        <td style="padding:7px 10px;text-align:right;white-space:nowrap">
+          <div style="font-weight:600">${fmtBytes(x.bytes_total)}</div>
+          <div class="hint" style="font-size:10px">↑ ${fmtBytes(x.bytes_sent||0)} · ↓ ${fmtBytes(x.bytes_recv||0)}</div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Eventos de controles
+  $$("[data-tr-range]").forEach(btn => {
+    btn.onclick = () => {
+      $$("[data-tr-range]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentRange = btn.dataset.trRange;
+      $("#trCustomDate").value = "";
+      onlyLive = false;
+      $("#trBtnLive").classList.remove("active");
+      loadTrafficData();
+    };
+  });
+
+  $("#trCustomDate").onchange = () => {
+    if ($("#trCustomDate").value) {
+      $$("[data-tr-range]").forEach(b => b.classList.remove("active"));
+      currentRange = "";
+      onlyLive = false;
+      $("#trBtnLive").classList.remove("active");
+      loadTrafficData();
+    }
+  };
+
+  $("#trVpnFilter").onchange = loadTrafficData;
+  $("#trUserFilter").onchange = loadTrafficData;
+  $("#trBtnRefresh").onclick = loadTrafficData;
+
+  $("#trSearch").oninput = filterTable;
+
+  $("#trBtnLive").onclick = () => {
+    onlyLive = !onlyLive;
+    $("#trBtnLive").classList.toggle("active", onlyLive);
+    loadTrafficData();
+  };
+
+  $("#trBtnExport").onclick = () => {
+    if (!allSessions.length) return toast("No hay sesiones para exportar");
+    const headers = ["ID", "Estado", "Usuario", "Dispositivo", "IP Origen", "VPN", "IP Destino", "Puerto", "Servicio", "Inicio", "Fin", "Duracion_Seg", "Bytes_Subida", "Bytes_Bajada", "Bytes_Total"];
+    const rows = allSessions.map(x => [
+      x.id,
+      x.status,
+      `"${x.user || ''}"`,
+      `"${LAN_DEVICES[x.user] || ''}"`,
+      x.src_ip,
+      `"${x.vpn || ''}"`,
+      x.dst_ip,
+      x.dst_port,
+      `"${x.service || ''}"`,
+      x.start_time,
+      x.end_time || '',
+      x.duration_sec,
+      x.bytes_sent,
+      x.bytes_recv,
+      x.bytes_total
+    ]);
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], {type: "text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vpnhub-traffic-${currentRange || 'export'}-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("Reporte CSV exportado");
+  };
+
+  $("#trBtnDevices").onclick = () => {
+    deviceNameDialog();
+  };
+
+  $("#trafficBox").addEventListener("click", e => {
+    const tdDev = e.target.closest("[data-tr-dev]");
+    if (tdDev) {
+      const ipOrUser = tdDev.dataset.trDev;
+      if (ipOrUser && (ipOrUser.startsWith("172.") || ipOrUser.startsWith("192.") || ipOrUser.startsWith("10."))) {
+        deviceNameDialog(ipOrUser);
+      }
+    }
+  });
+
+  loadTrafficData();
+}
+
+function deviceNameDialog(targetIp=""){
+  const curName = targetIp ? (LAN_DEVICES[targetIp] || "") : "";
+  const ipInput = targetIp 
+    ? `<input type="text" name="dev_ip" value="${esc(targetIp)}" readonly style="font-family:monospace;background:rgba(255,255,255,.05)">`
+    : `<input type="text" name="dev_ip" placeholder="ej. 192.168.1.50" required style="font-family:monospace">`;
+
+  openDialog("Nombres amigables de IPs LAN",
+    `<fieldset><legend>${targetIp ? 'Editar nombre de equipo' : 'Asignar nombre a IP de la LAN'}</legend>
+       <label class="fl">Dirección IP LAN
+         ${ipInput}
+       </label>
+       <label class="fl">Nombre del equipo / Usuario
+         <input type="text" name="dev_name" placeholder="ej. Notebook Juan, Servidor Contable..." value="${esc(curName)}" required autofocus>
+       </label>
+     </fieldset>
+     <div class="hint">Al asignar un nombre a una IP de la red local, aparecerá automáticamente en todos los registros de tráfico y reportes de auditoría en lugar de la IP numérica.</div>
+     <div class="err" id="dlgDevErr"></div>`,
+    `<button type="button" data-close>Cancelar</button>
+     <button type="button" class="primary" id="btnSaveDev">Guardar</button>`);
+
+  $("#btnSaveDev").onclick = async () => {
+    const form = $("#dlgForm").elements;
+    const ip = form.dev_ip.value.trim();
+    const name = form.dev_name.value.trim();
+    if (!ip) return $("#dlgDevErr").textContent = "Ingresá la IP";
+    if (!name) return $("#dlgDevErr").textContent = "Ingresá un nombre";
+    try {
+      await post("/api/traffic/devices", {ip, name});
+      dlg.close();
+      toast(`IP ${ip} nombrada como "${name}"`);
+      trafficDialog();
+    } catch(err) {
+      $("#dlgDevErr").textContent = err.message;
+    }
+  };
+}
+
+function logout(){
+  if (!confirm("¿Cerrar sesión para ingresar con otro usuario?")) return;
+  fetch("/api/logout", {method: "POST", headers: {"X-Requested-With": "vpnhub"}}).finally(() => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "/api/logout", true, "logout", "logout");
+    xhr.onload = xhr.onerror = () => { location.href = "/login"; };
+    xhr.send();
+    setTimeout(() => { location.href = "/login"; }, 300);
+  });
+}
+
+function meDialog(){
+  openDialog(`Mi cuenta · ${ME.name}`,
+    `<fieldset><legend>Acceso Remoto (Cliente WireGuard)</legend>
+       <div class="row" style="align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+         <span class="hint" style="max-width:380px;line-height:1.4">Conectate a todas las redes desde cualquier lugar del mundo con WireGuard oficial. Configura DNS y rutas sin tocar nada en Windows.</span>
+         <button type="button" class="btn primary" data-dl-wg="/api/me/wireguard" data-dl-name="vpnhub-${esc(ME?.name||'usuario')}.conf" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:600;white-space:nowrap;background:var(--accent);color:#fff;cursor:pointer;border:none">📥 Descargar túnel (.conf)</button>
+       </div>
+     </fieldset>
+     <fieldset><legend>Cambiar mi contraseña</legend>
+       <label class="fl full">Contraseña actual<input type="password" name="pw_old" autocomplete="current-password"></label>
+       <label class="fl">Nueva<input type="password" name="pw_new" autocomplete="new-password" placeholder="mínimo 8 caracteres"></label>
+       <label class="fl">Repetir<input type="password" name="pw_new2" autocomplete="new-password"></label>
+     </fieldset>
+     <span class="hint">Después de cambiarla, el navegador te va a pedir la nueva contraseña.</span>
+     <div class="err" id="dlgErr"></div>`,
+    `<button type="button" class="danger" id="btnMeLogout" style="margin-right:auto">Cerrar sesión</button>
+     <button type="button" data-close>Cancelar</button>
+     <button type="button" class="primary" id="btnPw">Cambiar contraseña</button>`);
+  $("#btnMeLogout").onclick = () => { dlg.close(); logout(); };
+  $("#btnPw").onclick = async () => {
+    const f = $("#dlgForm").elements;
+    if (f.pw_new.value !== f.pw_new2.value) return $("#dlgErr").textContent = "Las contraseñas nuevas no coinciden";
+    try { await post("/api/me/password", {old:f.pw_old.value, new:f.pw_new.value}); dlg.close(); toast("Contraseña cambiada. Recargá la página."); }
+    catch(e){ $("#dlgErr").textContent = e.message; }
+  };
+}
+
+/* ---------------- eventos ---------------- */
+document.addEventListener("click", async e=>{
+  const dlWg = e.target.closest("[data-dl-wg]");
+  if (dlWg) {
+    e.preventDefault();
+    e.stopPropagation();
+    downloadWgProfile(dlWg.dataset.dlWg, dlWg.dataset.dlName || "wireguard.conf");
+    return;
+  }
+  const star = e.target.closest("[data-fav]");
+  if (star){ toggleFav(star.dataset.fav); return; }
+  const th = e.target.closest("th[data-sort]");
+  if (th) {
+    const f = th.dataset.sort;
+    if (sortField === f) {
+      sortOrder = sortOrder === "asc" ? "desc" : "asc";
+    } else {
+      sortField = f;
+      sortOrder = "asc";
+    }
+    render();
+    return;
+  }
+  const subBtn = e.target.closest("[data-sub-toggle]");
+  if (subBtn) {
+    const n = subBtn.dataset.subToggle;
+    openState[n + ":sub"] = !openState[n + ":sub"];
+    render();
+    return;
+  }
+  const card = e.target.closest(".card, .row-vpn, .sub-row"), name = card?.dataset.name || $("#dlgForm").dataset.client;
+  if (e.target.closest("[data-cfg]")) return configDialog(name);
+  const btn = e.target.closest("button[data-act]");
+  if (btn){ return act(name, btn.dataset.act); }
+  const nb = e.target.closest("button[data-net]");
+  if (nb && name){
+    if (nb.dataset.net==="del"){ if(!confirm(`¿Borrar la red manual ${nb.dataset.real}?`)) return; await netAction(name, {action:"del", real:nb.dataset.real}); }
+    if (nb.dataset.net==="add"){ const box = nb.closest(".addnet");
+      const ok = await netAction(name, {action:"add", real: box.querySelector('[name=real]').value.trim(), virtual: box.querySelector('[name=virtual]').value.trim()});
+      if (ok) { box.querySelector('[name=real]').value=""; box.querySelector('[name=virtual]').value=""; } }
+    const inDlg = $("#cfgNets"); if (inDlg && dlg.open){ const c=data.find(x=>x.name===name); if(c) inDlg.innerHTML = netsTable(c); }
+    return;
+  }
+  const cp = e.target.closest("[data-copy]"); if (cp && cp.dataset.copy) copy(cp.dataset.copy);
+});
+document.addEventListener("change", async e=>{
+  const sw = e.target.closest('input[data-net]'); if (!sw) return;
+  const card = e.target.closest(".card, .row-vpn, .sub-row"), name = card?.dataset.name || $("#dlgForm").dataset.client;
+  if (sw.dataset.net==="auto") await netAction(name, {action:"auto", on: sw.checked});
+  else await netAction(name, {action: sw.dataset.net, real: sw.dataset.real});
+  const inDlg = $("#cfgNets"); if (inDlg && dlg.open){ const c=data.find(x=>x.name===name); if(c) inDlg.innerHTML = netsTable(c); }
+});
+document.addEventListener("submit", e=>{
+  const f = e.target.closest("form[data-otp]"); if(!f) return; e.preventDefault();
+  act(f.dataset.otp, "otp", {otp: f.otp.value.trim()});
+});
+document.addEventListener("keydown", e=>{ if (e.key==="Enter" && e.target.closest(".addnet")){ e.preventDefault(); e.target.closest(".addnet").querySelector('[data-net=add]').click(); }});
+$("#filter").addEventListener("input", render);
+$("#scopeFilter").addEventListener("change", render);
+$("#btnViewCards").onclick = () => setViewMode("cards");
+$("#btnViewList").onclick = () => setViewMode("list");
+$("#btnTraffic").onclick = trafficDialog;
+$("#btnUsers").onclick = usersDialog;
+$("#btnLogs").onclick = logsDialog;
+$("#btnMe").onclick = meDialog;
+$("#btnLogout").onclick = logout;
+$("#btnNew").onclick = () => META ? newDialog() : toast("cargando…");
+dlg.addEventListener("close", () => { delete $("#dlgForm").dataset.client; });
+
+(async () => {
+  try { META = await api("/api/meta"); } catch(e){ toast("error: "+e.message); }
+  await refresh();
+  const qp = new URLSearchParams(location.search);
+  if (qp.get("view") === "list") setViewMode("list");
+  if (qp.get("modal") === "traffic") setTimeout(trafficDialog, 150);
+  if (qp.get("modal") === "config") setTimeout(() => configDialog(qp.get("client") || (data[0] && data[0].name)), 150);
+  setInterval(()=>{ if(!dlg.open && !document.querySelector(".otp input:focus")) refresh(); }, 10000);
+})();
+</script>
+</body>
+</html>
